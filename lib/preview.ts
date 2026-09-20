@@ -24,6 +24,50 @@ export function composePreviewDocument(code: AppCode): string {
   <body>
     ${code.html}
     <script>
+      const __forgeCreateMemoryStorage = () => {
+        const values = new Map();
+
+        return {
+          get length() {
+            return values.size;
+          },
+          clear() {
+            values.clear();
+          },
+          getItem(key) {
+            const normalizedKey = String(key);
+            return values.has(normalizedKey) ? values.get(normalizedKey) : null;
+          },
+          key(index) {
+            return Array.from(values.keys())[Number(index)] ?? null;
+          },
+          removeItem(key) {
+            values.delete(String(key));
+          },
+          setItem(key, value) {
+            values.set(String(key), String(value));
+          },
+        };
+      };
+      const __forgeLocalStorage = __forgeCreateMemoryStorage();
+      const __forgeSessionStorage = __forgeCreateMemoryStorage();
+
+      try {
+        Object.defineProperty(window, "localStorage", {
+          configurable: true,
+          value: __forgeLocalStorage,
+        });
+        Object.defineProperty(window, "sessionStorage", {
+          configurable: true,
+          value: __forgeSessionStorage,
+        });
+      } catch (error) {
+        console.warn("Forge preview storage compatibility is limited", error);
+      }
+
+      const localStorage = __forgeLocalStorage;
+      const sessionStorage = __forgeSessionStorage;
+
       try {
         ${safeJavaScript}
       } catch (error) {

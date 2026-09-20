@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const result = await generateApplication(input, {
       apiKey,
       model,
-      baseUrl: process.env.AI_API_BASE?.trim() || "https://api.openai.com/v1",
+      baseUrl: process.env.AI_API_BASE?.trim() || "https://openrouter.ai/api/v1",
     });
 
     return Response.json(result, {

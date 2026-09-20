@@ -15,7 +15,7 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 ```
 
 1. A user describes an app or selects a starting example.
-2. Forge sends the request to a server-only, OpenAI-compatible provider.
+2. Forge sends the request to OpenRouter through a server-only API route.
 3. A real request-linked execution timeline communicates progress.
 4. The response is cleaned, parsed, and validated before it reaches the UI.
 5. HTML, CSS, and JavaScript render in an isolated live preview.
@@ -51,7 +51,7 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 flowchart LR
   User --> Chat
   Chat --> API[Next.js API route]
-  API --> LLM[OpenAI-compatible LLM]
+  API --> LLM[OpenRouter model]
   LLM --> Parser[Defensive JSON parser]
   Parser --> ProjectStore[Project state]
   ProjectStore --> Preview[Sandboxed iframe]
@@ -76,7 +76,7 @@ Generated JavaScript runs in an iframe with only:
 sandbox="allow-scripts"
 ```
 
-`allow-same-origin` is deliberately absent. Closing `script` and `style` tags are neutralized while composing `srcDoc`, and a restrictive content security policy blocks network connections, form submissions, remote assets, and access to the parent application.
+`allow-same-origin` is deliberately absent. Closing `script` and `style` tags are neutralized while composing `srcDoc`, and a restrictive content security policy blocks network connections, form submissions, remote assets, and access to the parent application. An isolated in-memory `localStorage`/`sessionStorage` compatibility layer prevents generated apps from losing all interactions when browser storage is unavailable in the sandbox.
 
 ### 3. Local-first persistence
 
@@ -84,7 +84,7 @@ Projects use `forge-ai-projects`; the selected project uses `forge-ai-current-pr
 
 ### 4. Provider abstraction
 
-The backend uses a standard chat-completions HTTP contract instead of a provider SDK. The API base, key, and model are runtime configuration, making OpenAI-compatible services interchangeable without exposing secrets to the browser.
+The backend uses OpenRouter's standard chat-completions HTTP contract instead of a provider SDK. The API base, key, and model remain runtime configuration, so models can be changed without exposing secrets to the browser.
 
 ### 5. Preserve the last valid build
 
@@ -102,12 +102,12 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Configure an OpenAI-compatible provider in `.env.local`:
+Configure OpenRouter in `.env.local` (the default model favors fast code generation):
 
 ```env
 AI_API_KEY=your_api_key_here
-AI_API_BASE=https://api.openai.com/v1
-AI_MODEL=gpt-4.1-mini
+AI_API_BASE=https://openrouter.ai/api/v1
+AI_MODEL=z-ai/glm-5.3-flashx
 ```
 
 When any required value is missing, the UI shows `AI service is not configured.` and offers Retry; it does not expose a server stack trace.

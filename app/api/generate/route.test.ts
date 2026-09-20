@@ -54,6 +54,43 @@ describe("POST /api/generate", () => {
     });
   });
 
+  it("defaults to the OpenRouter API when no base URL is configured", async () => {
+    process.env.AI_API_KEY = "test-key";
+    delete process.env.AI_API_BASE;
+    process.env.AI_MODEL = "forge-test";
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  title: "Task Orbit",
+                  summary: "A focused task manager.",
+                  html: "<main>Tasks</main>",
+                  css: "body{}",
+                  javascript: "",
+                  changes: ["Task list"],
+                  suggestions: ["Add keyboard shortcuts"],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    const response = await POST(makeRequest({ prompt: "Build a task manager" }));
+
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://openrouter.ai/api/v1/chat/completions",
+      expect.any(Object),
+    );
+  });
+
   it("returns the validated application payload", async () => {
     process.env.AI_API_KEY = "test-key";
     process.env.AI_API_BASE = "https://llm.example/v1";
