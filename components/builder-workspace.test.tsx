@@ -1,6 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -236,7 +243,9 @@ describe("BuilderWorkspace", () => {
     );
 
     await user.click(screen.getByRole("tab", { name: /^code$/i }));
-    expect(screen.getByText("<main><h1>Saved tasks</h1></main>")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /html source/i })).toHaveValue(
+      "<main><h1>Saved tasks</h1></main>",
+    );
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(
       new DOMException("Clipboard denied", "NotAllowedError"),
     );
@@ -253,5 +262,94 @@ describe("BuilderWorkspace", () => {
     await waitFor(() =>
       expect(within(drawer).queryByText("Saved Tasks")).not.toBeInTheDocument(),
     );
+  });
+
+  it("discards draft code, applies the next edit, and persists it", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
+    localStorage.setItem("forge-ai-current-project", restoredProject.id);
+    render(<BuilderWorkspace />);
+
+    await screen.findByText("A focused task manager.");
+    await user.click(screen.getByRole("tab", { name: /^code$/i }));
+    const editor = screen.getByRole("textbox", { name: /html source/i });
+
+    fireEvent.change(editor, {
+      target: { value: "<main><h1>Draft tasks</h1></main>" },
+    });
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /discard/i }));
+    expect(editor).toHaveValue("<main><h1>Saved tasks</h1></main>");
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+
+    fireEvent.change(editor, {
+      target: { value: "<main><h1>Edited tasks</h1></main>" },
+    });
+    await user.click(screen.getByRole("button", { name: /apply changes/i }));
+
+    expect(screen.getByRole("tab", { name: /^preview$/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByTitle("Generated app preview")).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("<main><h1>Edited tasks</h1></main>"),
+    );
+    await waitFor(() => {
+      const projects = JSON.parse(
+        localStorage.getItem("forge-ai-projects") ?? "[]",
+      ) as Project[];
+      expect(projects[0]?.html).toBe(
+        "<main><h1>Edited tasks</h1></main>",
+      );
+    });
+  });
+
+  it("applies a dirty source file with the control save shortcut", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
+    localStorage.setItem("forge-ai-current-project", restoredProject.id);
+    render(<BuilderWorkspace />);
+
+    await screen.findByText("A focused task manager.");
+    await user.click(screen.getByRole("tab", { name: /^code$/i }));
+    await user.click(screen.getByRole("tab", { name: /^css$/i }));
+    const editor = screen.getByRole("textbox", { name: /css source/i });
+    fireEvent.change(editor, { target: { value: "body { color: tomato; }" } });
+
+    await user.type(editor, "{Control>}s{/Control}");
+
+    expect(screen.getByRole("tab", { name: /^preview$/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await waitFor(() => {
+      const projects = JSON.parse(
+        localStorage.getItem("forge-ai-projects") ?? "[]",
+      ) as Project[];
+      expect(projects[0]?.css).toBe("body { color: tomato; }");
+    });
+  });
+
+  it("keeps unsaved code when previewing before applying", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
+    localStorage.setItem("forge-ai-current-project", restoredProject.id);
+    render(<BuilderWorkspace />);
+
+    await screen.findByText("A focused task manager.");
+    await user.click(screen.getByRole("tab", { name: /^code$/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: /html source/i }), {
+      target: { value: "<main><h1>Unsaved tasks</h1></main>" },
+    });
+
+    await user.click(screen.getByRole("tab", { name: /^preview$/i }));
+    await user.click(screen.getByRole("tab", { name: /^code$/i }));
+
+    expect(screen.getByRole("textbox", { name: /html source/i })).toHaveValue(
+      "<main><h1>Unsaved tasks</h1></main>",
+    );
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
   });
 });

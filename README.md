@@ -19,8 +19,9 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 3. A real request-linked execution timeline communicates progress.
 4. The response is cleaned, parsed, and validated before it reaches the UI.
 5. HTML, CSS, and JavaScript render in an isolated live preview.
-6. Follow-up prompts include the current source so the model edits instead of restarting.
-7. Projects, source, suggestions, and conversation history persist in the browser.
+6. Users can edit any generated source file, apply it to the preview, or discard the draft.
+7. Follow-up prompts include the current source so the model edits instead of restarting.
+8. Projects, source, suggestions, and conversation history persist in the browser.
 
 ## Features
 
@@ -28,7 +29,7 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 - Real Agent execution timeline instead of a generic spinner
 - Sandboxed live preview with desktop, tablet, and mobile viewports
 - Built-in form and native canvas chart compatibility for generated apps
-- HTML, CSS, and JavaScript source viewer with copy support
+- Editable HTML, CSS, and JavaScript with Apply, Discard, copy, dirty state, and `Cmd/Ctrl + S`
 - Iterative editing that sends the current source back to the model
 - Local-first project persistence and history restore/delete
 - Visible persistence failure feedback when browser storage is unavailable

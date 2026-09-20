@@ -944,11 +944,16 @@ textarea:focus-visible {
   background: #0a0d10;
 }
 
+.code-panel-shell {
+  height: 100%;
+}
+
 .code-toolbar {
   min-height: 41px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 0 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -984,7 +989,22 @@ textarea:focus-visible {
   background: #e8d45c;
 }
 
-.copy-button {
+.code-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.code-dirty-status {
+  color: #e8d45c;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.copy-button,
+.code-action-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -996,25 +1016,52 @@ textarea:focus-visible {
   background: transparent;
   cursor: pointer;
   font-size: 9px;
+  white-space: nowrap;
 }
 
-.copy-button:hover {
+.copy-button:hover,
+.code-action-button:hover:not(:disabled) {
   color: var(--text);
   background: var(--panel-soft);
 }
 
-.code-block {
+.code-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.code-action-button.primary {
+  border-color: #506b31;
+  color: #d9ffa9;
+  background: #17220e;
+}
+
+.code-action-button.primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: #10150a;
+  background: var(--accent);
+}
+
+.code-editor {
+  width: 100%;
   min-height: 0;
   flex: 1;
-  margin: 0;
-  overflow: auto;
+  resize: none;
+  border: 0;
+  border-radius: 0;
   padding: 22px;
   color: #c7d0d8;
+  background: #0a0d10;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 11px;
   line-height: 1.7;
   tab-size: 2;
-  white-space: pre-wrap;
+  caret-color: var(--accent);
+}
+
+.code-editor:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px #29321f;
 }
 
 .drawer-layer {
@@ -1278,6 +1325,28 @@ textarea:focus-visible {
 
   .preview-toolbar {
     padding-inline: 8px;
+  }
+
+  .code-toolbar {
+    min-height: 82px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding-inline: 8px;
+  }
+
+  .code-tabs,
+  .code-actions {
+    justify-content: space-between;
+  }
+
+  .code-dirty-status {
+    margin-right: auto;
+  }
+
+  .copy-button,
+  .code-action-button {
+    padding-inline: 6px;
   }
 
   .viewport-size {

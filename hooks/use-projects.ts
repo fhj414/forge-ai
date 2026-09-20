@@ -9,7 +9,7 @@ import {
   saveProjects,
 } from "@/lib/storage";
 import { createId } from "@/lib/utils";
-import type { GeneratedApp } from "@/types/ai";
+import type { AppCode, GeneratedApp } from "@/types/ai";
 import type { Project } from "@/types/project";
 
 export function useProjects() {
@@ -144,6 +144,26 @@ export function useProjects() {
     [currentProjectId],
   );
 
+  const updateCurrentProject = useCallback(
+    (code: AppCode) => {
+      if (!currentProjectId) return;
+
+      setPersistenceState("pending");
+      setProjects((existing) =>
+        existing.map((project) =>
+          project.id === currentProjectId
+            ? {
+                ...project,
+                ...code,
+                updatedAt: Math.max(Date.now(), project.updatedAt + 1),
+              }
+            : project,
+        ),
+      );
+    },
+    [currentProjectId],
+  );
+
   return {
     projects,
     currentProject,
@@ -153,5 +173,6 @@ export function useProjects() {
     newProject,
     restoreProject,
     deleteProject,
+    updateCurrentProject,
   };
 }

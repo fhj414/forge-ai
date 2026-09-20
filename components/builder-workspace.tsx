@@ -133,7 +133,10 @@ export function BuilderWorkspace() {
           </div>
         </section>
 
-        <PreviewPanel project={projectState.currentProject} />
+        <PreviewPanel
+          project={projectState.currentProject}
+          onApplyCode={projectState.updateCurrentProject}
+        />
       </div>
 
       <ProjectHistory

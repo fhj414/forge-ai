@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { CodeViewer } from "@/components/code-viewer";
 import { composePreviewDocument } from "@/lib/preview";
+import type { AppCode } from "@/types/ai";
 import type { Project } from "@/types/project";
 
 type PanelMode = "preview" | "code";
@@ -20,13 +21,24 @@ const VIEWPORTS: Array<{
   { id: "mobile", label: "Mobile", Icon: Smartphone },
 ];
 
-export function PreviewPanel({ project }: { project: Project | null }) {
+export function PreviewPanel({
+  project,
+  onApplyCode = () => {},
+}: {
+  project: Project | null;
+  onApplyCode?: (code: AppCode) => void;
+}) {
   const [mode, setMode] = useState<PanelMode>("preview");
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const srcDoc = useMemo(
     () => (project ? composePreviewDocument(project) : ""),
     [project],
   );
+
+  function applyCode(code: AppCode) {
+    onApplyCode(code);
+    setMode("preview");
+  }
 
   return (
     <section className="preview-panel" aria-label="Generated application">
@@ -88,23 +100,30 @@ export function PreviewPanel({ project }: { project: Project | null }) {
             <strong>Your app will appear here</strong>
             <p>Start with a prompt. Forge will generate, validate, and render it live.</p>
           </div>
-        ) : mode === "preview" ? (
-          <div className="preview-canvas">
-            <div
-              className="preview-frame-shell"
-              data-viewport={viewport}
-              data-testid="preview-frame-shell"
-            >
-              <iframe
-                key={project.updatedAt}
-                title="Generated app preview"
-                sandbox="allow-scripts allow-forms"
-                srcDoc={srcDoc}
+        ) : (
+          <>
+            <div className="preview-canvas" hidden={mode !== "preview"}>
+              <div
+                className="preview-frame-shell"
+                data-viewport={viewport}
+                data-testid="preview-frame-shell"
+              >
+                <iframe
+                  key={project.updatedAt}
+                  title="Generated app preview"
+                  sandbox="allow-scripts allow-forms"
+                  srcDoc={srcDoc}
+                />
+              </div>
+            </div>
+            <div className="code-panel-shell" hidden={mode !== "code"}>
+              <CodeViewer
+                key={`${project.id}-${project.updatedAt}`}
+                code={project}
+                onApply={applyCode}
               />
             </div>
-          </div>
-        ) : (
-          <CodeViewer code={project} />
+          </>
         )}
       </div>
     </section>

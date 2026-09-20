@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, Clipboard, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, Clipboard, RotateCcw, Save, X } from "lucide-react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 import type { AppCode } from "@/types/ai";
 
@@ -13,10 +13,24 @@ const TAB_LABELS: Record<CodeTab, string> = {
   javascript: "JavaScript",
 };
 
-export function CodeViewer({ code }: { code: AppCode }) {
+export function CodeViewer({
+  code,
+  onApply,
+}: {
+  code: AppCode;
+  onApply: (code: AppCode) => void;
+}) {
   const [tab, setTab] = useState<CodeTab>("html");
+  const [draft, setDraft] = useState<AppCode>(() => ({ ...code }));
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
     "idle",
+  );
+  const isDirty = useMemo(
+    () =>
+      draft.html !== code.html ||
+      draft.css !== code.css ||
+      draft.javascript !== code.javascript,
+    [code, draft],
   );
 
   useEffect(() => {
@@ -30,10 +44,29 @@ export function CodeViewer({ code }: { code: AppCode }) {
       if (!navigator.clipboard?.writeText) {
         throw new Error("Clipboard API unavailable");
       }
-      await navigator.clipboard.writeText(code[tab]);
+      await navigator.clipboard.writeText(draft[tab]);
       setCopyState("copied");
     } catch {
       setCopyState("error");
+    }
+  }
+
+  function applyChanges() {
+    if (!isDirty) return;
+    onApply(draft);
+  }
+
+  function discardChanges() {
+    setDraft({ ...code });
+  }
+
+  function handleEditorKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      (event.metaKey || event.ctrlKey) &&
+      event.key.toLowerCase() === "s"
+    ) {
+      event.preventDefault();
+      applyChanges();
     }
   }
 
@@ -54,24 +87,58 @@ export function CodeViewer({ code }: { code: AppCode }) {
             </button>
           ))}
         </div>
-        <button type="button" className="copy-button" onClick={copyCode}>
-          {copyState === "copied" ? (
-            <Check size={13} />
-          ) : copyState === "error" ? (
-            <X size={13} />
-          ) : (
-            <Clipboard size={13} />
-          )}
-          {copyState === "copied"
-            ? "Copied"
-            : copyState === "error"
-              ? "Copy failed"
-              : "Copy code"}
-        </button>
+        <div className="code-actions">
+          <span className="code-dirty-status" aria-live="polite">
+            {isDirty ? "Unsaved changes" : ""}
+          </span>
+          <button type="button" className="copy-button" onClick={copyCode}>
+            {copyState === "copied" ? (
+              <Check size={13} />
+            ) : copyState === "error" ? (
+              <X size={13} />
+            ) : (
+              <Clipboard size={13} />
+            )}
+            {copyState === "copied"
+              ? "Copied"
+              : copyState === "error"
+                ? "Copy failed"
+                : "Copy code"}
+          </button>
+          <button
+            type="button"
+            className="code-action-button"
+            disabled={!isDirty}
+            onClick={discardChanges}
+          >
+            <RotateCcw size={13} />
+            Discard
+          </button>
+          <button
+            type="button"
+            className="code-action-button primary"
+            disabled={!isDirty}
+            title="Apply changes (Cmd/Ctrl + S)"
+            onClick={applyChanges}
+          >
+            <Save size={13} />
+            Apply changes
+          </button>
+        </div>
       </div>
-      <pre className="code-block">
-        <code>{code[tab]}</code>
-      </pre>
+      <textarea
+        className="code-editor"
+        aria-label={`${TAB_LABELS[tab]} source`}
+        value={draft[tab]}
+        spellCheck={false}
+        onChange={(event) =>
+          setDraft((current) => ({
+            ...current,
+            [tab]: event.target.value,
+          }))
+        }
+        onKeyDown={handleEditorKeyDown}
+      />
     </div>
   );
 }
