@@ -27,6 +27,7 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 - Provider-neutral AI generation through `AI_API_BASE` and `AI_MODEL`
 - Real Agent execution timeline instead of a generic spinner
 - Sandboxed live preview with desktop, tablet, and mobile viewports
+- Built-in form and native canvas chart compatibility for generated apps
 - HTML, CSS, and JavaScript source viewer with copy support
 - Iterative editing that sends the current source back to the model
 - Local-first project persistence and history restore/delete
@@ -73,10 +74,10 @@ This is an intentional product decision, not a missing abstraction. The closed l
 Generated JavaScript runs in an iframe with only:
 
 ```html
-sandbox="allow-scripts"
+sandbox="allow-scripts allow-forms"
 ```
 
-`allow-same-origin` is deliberately absent. Closing `script` and `style` tags are neutralized while composing `srcDoc`, and a restrictive content security policy blocks network connections, form submissions, remote assets, and access to the parent application. An isolated in-memory `localStorage`/`sessionStorage` compatibility layer prevents generated apps from losing all interactions when browser storage is unavailable in the sandbox.
+The actual policy is `allow-scripts allow-forms`: form events are enabled so generated submit handlers can run, while a capture listener prevents navigation and CSP keeps `form-action 'none'`. `allow-same-origin` is deliberately absent. Closing `script` and `style` tags are neutralized while composing `srcDoc`, and the restrictive content security policy blocks network connections, form submissions, remote assets, and access to the parent application. Isolated in-memory storage and canvas-chart compatibility layers keep common generated interactions working without external packages.
 
 ### 3. Local-first persistence
 

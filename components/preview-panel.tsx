@@ -98,7 +98,7 @@ export function PreviewPanel({ project }: { project: Project | null }) {
               <iframe
                 key={project.updatedAt}
                 title="Generated app preview"
-                sandbox="allow-scripts"
+                sandbox="allow-scripts allow-forms"
                 srcDoc={srcDoc}
               />
             </div>

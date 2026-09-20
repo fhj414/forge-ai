@@ -72,6 +72,7 @@ describe("composePreviewDocument", () => {
         warn: (...args: unknown[]) => errors.push(args),
       },
       document: {
+        addEventListener: () => {},
         querySelector: () => ({
           addEventListener: (type: string, listener: () => void) => {
             listeners.set(type, listener);
@@ -115,7 +116,10 @@ describe("composePreviewDocument", () => {
     const status = { textContent: "idle" };
     const context: Record<string, unknown> = {
       console,
-      document: { querySelector: () => status },
+      document: {
+        addEventListener: () => {},
+        querySelector: () => status,
+      },
     };
     context.window = context;
 
@@ -126,5 +130,68 @@ describe("composePreviewDocument", () => {
     expect(context.save).toBeTypeOf("function");
     (context.save as () => void)();
     expect(status.textContent).toBe("saved");
+  });
+
+  it("renders common Chart.js-style configurations without an external library", () => {
+    const document = composePreviewDocument({
+      html: '<canvas id="expense-chart"></canvas>',
+      css: "",
+      javascript: `
+        var Chart;
+        const expenseChart = new Chart(document.querySelector("#expense-chart").getContext("2d"), {
+          type: "bar",
+          data: {
+            labels: ["Food", "Rent"],
+            datasets: [{ data: [30, 70], backgroundColor: ["#f97316", "#6366f1"] }]
+          }
+        });
+        expenseChart.data.datasets[0].data = [45, 55];
+        expenseChart.update();
+      `,
+    });
+    const script = document.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    const drawCalls: string[] = [];
+    const fillColors: string[] = [];
+    const canvas = { width: 320, height: 180 };
+    const renderingContext = {
+      canvas,
+      set fillStyle(value: string) {
+        fillColors.push(value);
+      },
+      beginPath: () => drawCalls.push("beginPath"),
+      clearRect: () => drawCalls.push("clearRect"),
+      fill: () => drawCalls.push("fill"),
+      fillRect: () => drawCalls.push("fillRect"),
+      lineTo: () => drawCalls.push("lineTo"),
+      moveTo: () => drawCalls.push("moveTo"),
+      stroke: () => drawCalls.push("stroke"),
+    };
+    const errors: unknown[][] = [];
+    const context: Record<string, unknown> = {
+      Chart: { nodeName: "CANVAS" },
+      console: {
+        error: (...args: unknown[]) => errors.push(args),
+        warn: (...args: unknown[]) => errors.push(args),
+      },
+      document: {
+        addEventListener: () => {},
+        querySelector: () => ({ getContext: () => renderingContext }),
+      },
+    };
+    context.window = context;
+
+    expect(script).toBeDefined();
+
+    runInNewContext(script!, context);
+
+    expect(errors).toEqual([]);
+    expect(drawCalls).toContain("clearRect");
+    expect(drawCalls.filter((call) => call === "fillRect")).toHaveLength(4);
+    expect(fillColors).toEqual([
+      "#f97316",
+      "#6366f1",
+      "#f97316",
+      "#6366f1",
+    ]);
   });
 });
