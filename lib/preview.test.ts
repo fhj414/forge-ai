@@ -1,8 +1,25 @@
-import { runInNewContext } from "node:vm";
+import { createContext, runInContext, type Context } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
 import { composePreviewDocument } from "@/lib/preview";
+
+function runPreviewScripts(
+  document: string,
+  context: Record<string, unknown>,
+): Context {
+  const scripts = Array.from(
+    document.matchAll(/<script>([\s\S]*?)<\/script>/g),
+    (match) => match[1],
+  );
+  const vmContext = createContext(context);
+
+  for (const script of scripts) {
+    runInContext(script, vmContext);
+  }
+
+  return vmContext;
+}
 
 describe("composePreviewDocument", () => {
   it("composes body HTML, CSS, and JavaScript into a complete document", () => {
@@ -63,7 +80,6 @@ describe("composePreviewDocument", () => {
         document.querySelector("#save").addEventListener("click", () => {});
       `,
     });
-    const script = document.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     const listeners = new Map<string, () => void>();
     const errors: unknown[][] = [];
     const context: Record<string, unknown> = {
@@ -94,9 +110,7 @@ describe("composePreviewDocument", () => {
       },
     });
 
-    expect(script).toBeDefined();
-
-    runInNewContext(script!, context);
+    runPreviewScripts(document, context);
 
     expect(errors).toEqual([]);
     expect(listeners.has("click")).toBe(true);
@@ -112,7 +126,6 @@ describe("composePreviewDocument", () => {
         }
       `,
     });
-    const script = document.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     const status = { textContent: "idle" };
     const context: Record<string, unknown> = {
       console,
@@ -123,13 +136,39 @@ describe("composePreviewDocument", () => {
     };
     context.window = context;
 
-    expect(script).toBeDefined();
-
-    runInNewContext(script!, context);
+    runPreviewScripts(document, context);
 
     expect(context.save).toBeTypeOf("function");
     (context.save as () => void)();
     expect(status.textContent).toBe("saved");
+  });
+
+  it("exposes generated application instances to inline HTML event handlers", () => {
+    const document = composePreviewDocument({
+      html: '<button onclick="taskManager.completeTask()">Complete</button><output id="status">active</output>',
+      css: "",
+      javascript: `
+        class TaskManager {
+          completeTask() {
+            document.querySelector("#status").textContent = "completed";
+          }
+        }
+        const taskManager = new TaskManager();
+      `,
+    });
+    const status = { textContent: "active" };
+    const context: Record<string, unknown> = {
+      console,
+      document: {
+        addEventListener: () => {},
+        querySelector: () => status,
+      },
+    };
+    context.window = context;
+    const vmContext = runPreviewScripts(document, context);
+    runInContext("taskManager.completeTask()", vmContext);
+
+    expect(status.textContent).toBe("completed");
   });
 
   it("renders common Chart.js-style configurations without an external library", () => {
@@ -149,7 +188,6 @@ describe("composePreviewDocument", () => {
         expenseChart.update();
       `,
     });
-    const script = document.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     const drawCalls: string[] = [];
     const fillColors: string[] = [];
     const canvas = { width: 320, height: 180 };
@@ -180,9 +218,7 @@ describe("composePreviewDocument", () => {
     };
     context.window = context;
 
-    expect(script).toBeDefined();
-
-    runInNewContext(script!, context);
+    runPreviewScripts(document, context);
 
     expect(errors).toEqual([]);
     expect(drawCalls).toContain("clearRect");

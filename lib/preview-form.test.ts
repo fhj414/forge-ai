@@ -24,21 +24,25 @@ describe("preview form compatibility", () => {
       previewDocument,
       "text/html",
     );
-    const script = parsedDocument.querySelector("script")?.textContent;
-    const errors: unknown[][] = [];
-
-    expect(script).toBeDefined();
-
-    const runPreviewScript = new Function(
-      "window",
-      "document",
-      "console",
-      script!,
+    const scripts = Array.from(
+      parsedDocument.querySelectorAll("script"),
+      (script) => script.textContent ?? "",
     );
-    runPreviewScript({}, parsedDocument, {
-      error: (...args: unknown[]) => errors.push(args),
-      warn: (...args: unknown[]) => errors.push(args),
-    });
+    const errors: unknown[][] = [];
+    const previewWindow: Record<string, unknown> = {};
+
+    for (const script of scripts) {
+      const runPreviewScript = new Function(
+        "window",
+        "document",
+        "console",
+        script,
+      );
+      runPreviewScript(previewWindow, parsedDocument, {
+        error: (...args: unknown[]) => errors.push(args),
+        warn: (...args: unknown[]) => errors.push(args),
+      });
+    }
 
     const form = parsedDocument.querySelector("#expense-form");
     const event = new SubmitEvent("submit", {

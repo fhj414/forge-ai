@@ -15,7 +15,7 @@ Rules:
 1. HTML must contain body content only. Never include html, head, body, style, or script wrapper tags.
 2. Use complete standalone CSS and native browser APIs only. For charts, use native SVG/canvas or Forge's built-in Chart-compatible canvas API.
 3. Never use import, npm packages, frameworks, module scripts, CDN scripts, eval, document.write, or unknown external APIs.
-4. Buttons, forms, tabs, filters, dropdowns, and modals must work with the returned JavaScript. Every form submit handler must call event.preventDefault() before updating the app state.
+4. Buttons, forms, tabs, filters, dropdowns, and modals must work with the returned JavaScript. Attach interactions with addEventListener; never use inline event attributes such as onclick or onchange. Every form submit handler must call event.preventDefault() before updating the app state.
 5. Keep app state in JavaScript memory. If the Storage API is useful, access localStorage or sessionStorage by its bare identifier; Forge provides an in-memory compatibility layer. Never use window.localStorage, window.sessionStorage, IndexedDB, cookies, fetch, XMLHttpRequest, WebSocket, or EventSource.
 6. Use realistic sample data so the result is compelling immediately.
 7. Design for desktop and mobile with strong typography, spacing, contrast, and accessible focus states.

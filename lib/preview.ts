@@ -22,8 +22,8 @@ export function composePreviewDocument(code: AppCode): string {
     </style>
   </head>
   <body>
-    ${code.html}
     <script>
+      (() => {
       const __forgeCreateMemoryStorage = () => {
         const values = new Map();
 
@@ -64,9 +64,6 @@ export function composePreviewDocument(code: AppCode): string {
       } catch (error) {
         console.warn("Forge preview storage compatibility is limited", error);
       }
-
-      const localStorage = __forgeLocalStorage;
-      const sessionStorage = __forgeSessionStorage;
 
       class __ForgeChart {
         constructor(target, config = {}) {
@@ -208,7 +205,6 @@ export function composePreviewDocument(code: AppCode): string {
 
       const __forgeChartConstructor =
         typeof window.Chart === "function" ? window.Chart : __ForgeChart;
-      var Chart = __forgeChartConstructor;
       try {
         window.Chart = __forgeChartConstructor;
       } catch (error) {
@@ -218,12 +214,11 @@ export function composePreviewDocument(code: AppCode): string {
       document.addEventListener("submit", (event) => {
         event.preventDefault();
       }, true);
-
-      try {
-        ${safeJavaScript}
-      } catch (error) {
-        console.error("Forge preview error", error);
-      }
+      })();
+    </script>
+    ${code.html}
+    <script>
+      ${safeJavaScript}
     </script>
   </body>
 </html>`;
