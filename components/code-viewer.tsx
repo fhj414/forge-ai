@@ -15,13 +15,21 @@ const TAB_LABELS: Record<CodeTab, string> = {
 
 export function CodeViewer({
   code,
+  disabled = false,
   onApply,
+  onDirtyChange,
 }: {
   code: AppCode;
+  disabled?: boolean;
   onApply: (code: AppCode) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [tab, setTab] = useState<CodeTab>("html");
-  const [draft, setDraft] = useState<AppCode>(() => ({ ...code }));
+  const [draft, setDraft] = useState<AppCode>(() => ({
+    html: code.html,
+    css: code.css,
+    javascript: code.javascript,
+  }));
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
     "idle",
   );
@@ -39,6 +47,10 @@ export function CodeViewer({
     return () => window.clearTimeout(timeout);
   }, [copyState]);
 
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
   async function copyCode() {
     try {
       if (!navigator.clipboard?.writeText) {
@@ -52,12 +64,21 @@ export function CodeViewer({
   }
 
   function applyChanges() {
-    if (!isDirty) return;
-    onApply(draft);
+    if (disabled || !isDirty) return;
+    onApply({
+      html: draft.html,
+      css: draft.css,
+      javascript: draft.javascript,
+    });
   }
 
   function discardChanges() {
-    setDraft({ ...code });
+    if (disabled) return;
+    setDraft({
+      html: code.html,
+      css: code.css,
+      javascript: code.javascript,
+    });
   }
 
   function handleEditorKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -108,7 +129,7 @@ export function CodeViewer({
           <button
             type="button"
             className="code-action-button"
-            disabled={!isDirty}
+            disabled={disabled || !isDirty}
             onClick={discardChanges}
           >
             <RotateCcw size={13} />
@@ -117,7 +138,7 @@ export function CodeViewer({
           <button
             type="button"
             className="code-action-button primary"
-            disabled={!isDirty}
+            disabled={disabled || !isDirty}
             title="Apply changes (Cmd/Ctrl + S)"
             onClick={applyChanges}
           >
@@ -130,6 +151,7 @@ export function CodeViewer({
         className="code-editor"
         aria-label={`${TAB_LABELS[tab]} source`}
         value={draft[tab]}
+        disabled={disabled}
         spellCheck={false}
         onChange={(event) =>
           setDraft((current) => ({

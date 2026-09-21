@@ -23,10 +23,14 @@ const VIEWPORTS: Array<{
 
 export function PreviewPanel({
   project,
+  disabled = false,
   onApplyCode = () => {},
+  onDirtyChange,
 }: {
   project: Project | null;
+  disabled?: boolean;
   onApplyCode?: (code: AppCode) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [mode, setMode] = useState<PanelMode>("preview");
   const [viewport, setViewport] = useState<Viewport>("desktop");
@@ -120,7 +124,9 @@ export function PreviewPanel({
               <CodeViewer
                 key={`${project.id}-${project.updatedAt}`}
                 code={project}
+                disabled={disabled}
                 onApply={applyCode}
+                onDirtyChange={onDirtyChange}
               />
             </div>
           </>

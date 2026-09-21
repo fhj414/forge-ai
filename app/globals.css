@@ -748,6 +748,10 @@ textarea:focus-visible {
   text-align: center;
 }
 
+.composer-blocked-reason {
+  color: #e8d45c;
+}
+
 .preview-panel {
   display: flex;
   flex-direction: column;
@@ -1062,6 +1066,12 @@ textarea:focus-visible {
 .code-editor:focus-visible {
   outline: 0;
   box-shadow: inset 0 0 0 1px #29321f;
+}
+
+.code-editor:disabled {
+  color: #7b858e;
+  cursor: wait;
+  opacity: 0.78;
 }
 
 .drawer-layer {

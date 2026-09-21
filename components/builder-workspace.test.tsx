@@ -352,4 +352,61 @@ describe("BuilderWorkspace", () => {
     );
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
   });
+
+  it("prevents manual code edits from racing an AI refinement", async () => {
+    const user = userEvent.setup();
+    let finishRequest: ((value: Response) => void) | undefined;
+    vi.mocked(fetch).mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishRequest = resolve;
+        }),
+    );
+    localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
+    localStorage.setItem("forge-ai-current-project", restoredProject.id);
+    render(<BuilderWorkspace />);
+
+    await screen.findByText("A focused task manager.");
+    await user.click(screen.getByRole("tab", { name: /^code$/i }));
+    const editor = screen.getByRole("textbox", { name: /html source/i });
+    fireEvent.change(editor, {
+      target: { value: "<main><h1>Manual draft</h1></main>" },
+    });
+    await user.type(
+      screen.getByRole("textbox", { name: /describe your app/i }),
+      "Add a completed section",
+    );
+
+    expect(
+      screen.getByText("Apply or discard code changes before refining."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /refine app/i })).toBeDisabled();
+    expect(fetch).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /discard/i }));
+    await user.click(screen.getByRole("button", { name: /refine app/i }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    expect(editor).toBeDisabled();
+
+    finishRequest?.(
+      new Response(
+        JSON.stringify(
+          generated({
+            summary: "AI refinement complete.",
+            html: "<main><h1>AI tasks</h1></main>",
+          }),
+        ),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    expect(await screen.findByText("AI refinement complete.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /html source/i })).toHaveValue(
+      "<main><h1>AI tasks</h1></main>",
+    );
+  });
 });

@@ -154,7 +154,9 @@ export function useProjects() {
           project.id === currentProjectId
             ? {
                 ...project,
-                ...code,
+                html: code.html,
+                css: code.css,
+                javascript: code.javascript,
                 updatedAt: Math.max(Date.now(), project.updatedAt + 1),
               }
             : project,

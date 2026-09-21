@@ -5,6 +5,7 @@ interface PromptInputProps {
   value: string;
   isRefinement: boolean;
   disabled: boolean;
+  blockedReason?: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
 }
@@ -13,13 +14,16 @@ export function PromptInput({
   value,
   isRefinement,
   disabled,
+  blockedReason,
   onChange,
   onSubmit,
 }: PromptInputProps) {
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      onSubmit();
+      if (!disabled && !blockedReason) {
+        onSubmit();
+      }
     }
   }
 
@@ -39,13 +43,16 @@ export function PromptInput({
         }
       />
       <div className="composer-footer">
-        <span>Enter to send · Shift + Enter for a new line</span>
+        <span className={blockedReason ? "composer-blocked-reason" : undefined}>
+          {blockedReason ?? "Enter to send · Shift + Enter for a new line"}
+        </span>
         <button
           type="button"
           className="generate-button"
           onClick={onSubmit}
-          disabled={disabled || !value.trim()}
+          disabled={disabled || Boolean(blockedReason) || !value.trim()}
           aria-label={isRefinement ? "Refine app" : "Generate app"}
+          title={blockedReason}
         >
           {disabled ? (
             <LoaderCircle className="spin" size={15} />

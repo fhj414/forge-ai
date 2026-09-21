@@ -39,6 +39,7 @@ export function BuilderWorkspace() {
   const [prompt, setPrompt] = useState("");
   const [pendingPrompt, setPendingPrompt] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [hasUnsavedCode, setHasUnsavedCode] = useState(false);
   const projectState = useProjects();
   const generator = useGenerator();
 
@@ -55,7 +56,7 @@ export function BuilderWorkspace() {
 
   async function submitPrompt(explicitPrompt?: string) {
     const nextPrompt = (explicitPrompt ?? prompt).trim();
-    if (!nextPrompt || generator.isGenerating) return;
+    if (!nextPrompt || generator.isGenerating || hasUnsavedCode) return;
 
     setPrompt("");
     setPendingPrompt(nextPrompt);
@@ -86,6 +87,7 @@ export function BuilderWorkspace() {
     generator.reset();
     setPrompt("");
     setPendingPrompt("");
+    setHasUnsavedCode(false);
   }
 
   function openProject(id: string) {
@@ -93,6 +95,7 @@ export function BuilderWorkspace() {
     generator.reset();
     setPrompt("");
     setPendingPrompt("");
+    setHasUnsavedCode(false);
     setHistoryOpen(false);
   }
 
@@ -100,7 +103,7 @@ export function BuilderWorkspace() {
     <main className="app-shell">
       <AppHeader
         projectTitle={projectState.currentProject?.title}
-        disabled={generator.isGenerating}
+        disabled={generator.isGenerating || hasUnsavedCode}
         onNewProject={startNewProject}
         onOpenHistory={() => setHistoryOpen(true)}
       />
@@ -114,7 +117,7 @@ export function BuilderWorkspace() {
             errorMessage={generator.error?.message}
             buildSummary={buildSummary}
             examples={EXAMPLES}
-            disabled={generator.isGenerating}
+            disabled={generator.isGenerating || hasUnsavedCode}
             onExample={setPrompt}
             onRetry={() => void submitPrompt(pendingPrompt)}
             onSuggestion={(suggestion) => void submitPrompt(suggestion)}
@@ -124,6 +127,11 @@ export function BuilderWorkspace() {
               value={prompt}
               isRefinement={Boolean(projectState.currentProject)}
               disabled={generator.isGenerating}
+              blockedReason={
+                hasUnsavedCode
+                  ? "Apply or discard code changes before refining."
+                  : undefined
+              }
               onChange={setPrompt}
               onSubmit={() => void submitPrompt()}
             />
@@ -135,7 +143,9 @@ export function BuilderWorkspace() {
 
         <PreviewPanel
           project={projectState.currentProject}
+          disabled={generator.isGenerating}
           onApplyCode={projectState.updateCurrentProject}
+          onDirtyChange={setHasUnsavedCode}
         />
       </div>
 
