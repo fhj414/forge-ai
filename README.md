@@ -23,7 +23,7 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 7. Follow-up prompts include the current source so the model edits instead of restarting.
 8. Projects, source, suggestions, and conversation history persist in the browser.
 9. Every generated build records trusted model, timing, source-size, and validation metadata.
-10. The Preview toolbar downloads the active project as a standalone HTML application.
+10. The Preview toolbar downloads the active project as a standalone runnable HTML application, not a full project backup.
 
 ## Features
 
@@ -36,7 +36,7 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 - Local-first project persistence and history restore/delete
 - Capped version history with one-click restore and revision source labels
 - Trusted generation metadata for model, duration, source size, and schema validation
-- Standalone `Download HTML` export with embedded preview compatibility runtime
+- Standalone runnable `Download HTML` export with embedded preview compatibility runtime (not a restorable project backup)
 - Visible persistence failure feedback when browser storage is unavailable
 - Suggested improvements that become one-click refinement prompts
 - Deterministic AI Build Summary based on generated structure and controls
@@ -101,7 +101,8 @@ Network and model errors are represented as recoverable UI state. A failed refin
 
 Each successful build stores the configured model, measured request duration, source line and byte counts, and a
 `schemaValidated: true` marker. The active project keeps the ten most recent prior revisions, including manual edits
-and restores, while conversation messages remain an audit trail. `Download HTML` reuses the exact document composer
+and restores, while conversation messages remain an audit trail. `Download HTML` is a runnable artifact rather than a
+full project backup; it reuses the exact document composer
 used by the sandboxed preview, so forms, browser storage compatibility, native Chart-style rendering, and CSP remain
 available in the one-file export. API keys and server-only environment variables never enter projects, revisions, or
 downloads.
@@ -174,6 +175,7 @@ types/                       Shared strict TypeScript models
 
 - Multi-file React generation with Sandpack or WebContainer
 - Authenticated database persistence and cross-device sync
+- Import/export project backups containing source, messages, metadata, and revision history
 
 ### P2
 

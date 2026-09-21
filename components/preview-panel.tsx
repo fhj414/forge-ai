@@ -102,25 +102,27 @@ export function PreviewPanel({
           </div>
         ) : null}
         {project ? (
-          <button
-            className="preview-export-button"
-            type="button"
-            onClick={() => downloadProjectHtml(project)}
-            aria-label="Download HTML"
-          >
-            <Download size={14} /> Download HTML
-          </button>
-        ) : null}
-        {project && onOpenVersionHistory ? (
-          <button
-            className="version-history-button"
-            type="button"
-            disabled={versionHistoryDisabled}
-            onClick={onOpenVersionHistory}
-            aria-label="Open version history"
-          >
-            <History size={14} /> Versions
-          </button>
+          <div className="preview-actions">
+            <button
+              className="preview-export-button"
+              type="button"
+              onClick={() => downloadProjectHtml(project)}
+              aria-label="Download HTML"
+            >
+              <Download size={14} /> Download HTML
+            </button>
+            {onOpenVersionHistory ? (
+              <button
+                className="version-history-button"
+                type="button"
+                disabled={versionHistoryDisabled}
+                onClick={onOpenVersionHistory}
+                aria-label="Open version history"
+              >
+                <History size={14} /> Versions
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
