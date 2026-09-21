@@ -72,6 +72,7 @@ describe("composePreviewDocument", () => {
     });
 
     expect(document).not.toContain("forge:preview-health");
+    expect(document).toContain("    </script>\n    <main>Ready</main>");
   });
 
   it("blocks generated applications from sending data to external origins", () => {

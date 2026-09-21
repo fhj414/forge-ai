@@ -17,7 +17,7 @@ export function composePreviewDocument(
   const safeCss = neutralizeClosingTag(code.css, "style");
   const safeJavaScript = neutralizeClosingTag(code.javascript, "script");
   const healthRuntime = options?.diagnosticSessionId
-    ? `<script>\n      ${createPreviewHealthRuntime(options.diagnosticSessionId)}\n    </script>`
+    ? `<script>\n      ${createPreviewHealthRuntime(options.diagnosticSessionId)}\n    </script>\n    `
     : "";
 
   return `<!doctype html>
@@ -228,8 +228,7 @@ export function composePreviewDocument(
       }, true);
       })();
     </script>
-    ${healthRuntime}
-    ${code.html}
+    ${healthRuntime}${code.html}
     <script>
       ${safeJavaScript}
     </script>

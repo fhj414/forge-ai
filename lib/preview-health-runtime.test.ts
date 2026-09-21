@@ -2,12 +2,14 @@ import { createContext, runInContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
+import { composePreviewDocument } from "./preview";
 import { createPreviewHealthRuntime } from "./preview-health-runtime";
 
 type Listener = (event: Record<string, unknown>) => void;
 
 interface RuntimeHarnessOptions {
   bodyText?: string;
+  bodyInnerText?: string;
   controls?: number;
   forms?: number;
   visualElement?: boolean;
@@ -26,6 +28,7 @@ function runRuntime(options: RuntimeHarnessOptions = {}) {
     readyState: options.readyState ?? "loading",
     body: {
       textContent: options.bodyText ?? "",
+      innerText: options.bodyInnerText ?? options.bodyText ?? "",
       querySelector: () => visualElement,
     },
     addEventListener: (type: string, listener: Listener) => {
@@ -138,8 +141,21 @@ describe("createPreviewHealthRuntime", () => {
     ).toEqual({ message: "network broke" });
   });
 
-  it("reports an issue when the document has neither text nor a visual element", () => {
-    const harness = runRuntime({ bodyText: "   ", readyState: "complete" });
+  it("does not count composed script source as meaningful preview content", () => {
+    const composedDocument = composePreviewDocument({
+      html: "",
+      css: "",
+      javascript: "",
+    });
+    const scriptSource = Array.from(
+      composedDocument.matchAll(/<script>([\s\S]*?)<\/script>/g),
+      (match) => match[1],
+    ).join("\n");
+    const harness = runRuntime({
+      bodyText: scriptSource,
+      bodyInnerText: "",
+      readyState: "complete",
+    });
 
     settleRuntime(harness);
 
@@ -147,6 +163,37 @@ describe("createPreviewHealthRuntime", () => {
       status: "issues",
       hasMeaningfulContent: false,
       issues: [expect.objectContaining({ message: expect.stringContaining("meaningful") })],
+    });
+  });
+
+  it("reports an updated issue result for runtime failures after settlement", () => {
+    const harness = runRuntime({ bodyText: "Dashboard", readyState: "complete" });
+
+    settleRuntime(harness);
+
+    expect(harness.messages.at(-1)).toMatchObject({ status: "healthy", issues: [] });
+
+    harness.windowListeners.get("error")?.({ message: "late failure" });
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      issues: [expect.objectContaining({ message: "late failure" })],
+    });
+  });
+
+  it("clamps interactive and form counts to the preview health protocol maximum", () => {
+    const harness = runRuntime({
+      bodyText: "Dashboard",
+      controls: 10_001,
+      forms: 10_001,
+      readyState: "complete",
+    });
+
+    settleRuntime(harness);
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      interactiveControls: 10_000,
+      forms: 10_000,
     });
   });
 });

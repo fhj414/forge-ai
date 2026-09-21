@@ -16,6 +16,8 @@ export function createPreviewHealthRuntime(sessionId: string): string {
   try {
     const issues = [];
     const issueLimit = 5;
+    const metricLimit = 10000;
+    let settled = false;
 
     const text = (value, limit) => {
       try {
@@ -41,6 +43,11 @@ export function createPreviewHealthRuntime(sessionId: string): string {
     const optionalText = (value, limit) =>
       value === undefined || value === null ? "" : text(value, limit).trim();
 
+    const count = (elements) => {
+      const length = nonNegativeInteger(Number(elements?.length));
+      return Math.min(metricLimit, length === undefined ? 0 : length);
+    };
+
     const addIssue = (value) => {
       try {
         if (issues.length >= issueLimit) return;
@@ -60,12 +67,12 @@ export function createPreviewHealthRuntime(sessionId: string): string {
     const measure = () => {
       try {
         const body = document.body;
-        const bodyText = typeof body?.textContent === "string" ? body.textContent.trim() : "";
+        const bodyText = typeof body?.innerText === "string" ? body.innerText.trim() : "";
         const hasVisualElement = Boolean(body?.querySelector?.("canvas, svg, img, video"));
         return {
           hasMeaningfulContent: Boolean(bodyText || hasVisualElement),
-          interactiveControls: document.querySelectorAll("button, input, select, textarea, a[href], [role=\\\"button\\\"]").length,
-          forms: document.querySelectorAll("form").length,
+          interactiveControls: count(document.querySelectorAll("button, input, select, textarea, a[href], [role=\\\"button\\\"]")),
+          forms: count(document.querySelectorAll("form")),
         };
       } catch (error) {
         addIssue({ message: error });
@@ -89,8 +96,15 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       } catch (error) {}
     };
 
-    const onError = (event) => addIssue(event || {});
-    const onUnhandledRejection = (event) => addIssue(event || {});
+    const onFailure = (event) => {
+      const issueCount = issues.length;
+      addIssue(event || {});
+      if (settled && issues.length > issueCount) {
+        report("issues", measure());
+      }
+    };
+    const onError = (event) => onFailure(event);
+    const onUnhandledRejection = (event) => onFailure(event);
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onUnhandledRejection);
 
@@ -102,6 +116,7 @@ export function createPreviewHealthRuntime(sessionId: string): string {
         if (!metrics.hasMeaningfulContent) {
           addIssue({ message: "Preview did not render meaningful content" });
         }
+        settled = true;
         report(issues.length > 0 ? "issues" : "healthy", metrics);
       } catch (error) {}
     };
