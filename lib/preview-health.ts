@@ -57,7 +57,9 @@ function issueLocation(issue: PreviewHealthIssue): string {
   if (!source && line === undefined && column === undefined) return "location unknown";
 
   const location = source ?? "unknown source";
-  if (line === undefined) return location;
+  if (line === undefined) {
+    return column === undefined ? location : `${location} (column ${column})`;
+  }
   if (column === undefined) return `${location}:${line}`;
   return `${location}:${line}:${column}`;
 }

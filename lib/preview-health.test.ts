@@ -65,6 +65,15 @@ describe("preview health protocol", () => {
     expect(prompts.displayPrompt).toBe("Fix 1 detected preview runtime issue");
   });
 
+  it("preserves a reported column when no line is available", () => {
+    const prompts = buildPreviewRepairPrompt({
+      ...report,
+      issues: [{ ...issue, line: undefined, column: 7 }],
+    });
+
+    expect(prompts.requestPrompt).toContain("about:srcdoc (column 7)");
+  });
+
   it("caps the provider prompt even when issue messages are large", () => {
     const prompts = buildPreviewRepairPrompt({
       ...report,
