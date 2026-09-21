@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Smartphone,
   Sparkles,
+  Timer,
 } from "lucide-react";
 
 import { AgentSteps } from "@/components/agent-steps";
@@ -95,6 +96,26 @@ function BuildSummaryCard({ summary }: { summary: BuildSummary }) {
             ? "Persisted locally"
             : "Not saved — storage unavailable"}
         </span>
+        {summary.generationMetadata ? (
+          <>
+            <span>
+              <Sparkles size={13} /> {summary.generationMetadata.model}
+            </span>
+            <span>
+              <Timer size={13} /> {summary.generationMetadata.durationMs} ms ·{" "}
+              {summary.generationMetadata.codeLines} lines ·{" "}
+              {summary.generationMetadata.codeBytes} bytes
+            </span>
+            <span>
+              <Check size={13} /> Schema validated
+            </span>
+            <span>
+              {summary.generationMetadata.kind === "initial"
+                ? "Initial generation"
+                : "AI refinement"}
+            </span>
+          </>
+        ) : null}
       </div>
     </section>
   );

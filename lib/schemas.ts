@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import type { GeneratedApp, GenerateRequest } from "@/types/ai";
+import type {
+  GeneratedApp,
+  GeneratedBuild,
+  GenerateRequest,
+} from "@/types/ai";
 
 const HTML_MAX_LENGTH = 200_000;
 const CSS_MAX_LENGTH = 120_000;
@@ -14,6 +18,19 @@ const generatedAppSchema = z.object({
   javascript: z.string().max(JAVASCRIPT_MAX_LENGTH),
   changes: z.array(z.string().trim().min(1)).default([]),
   suggestions: z.array(z.string().trim().min(1)).max(4).default([]),
+});
+
+const generationMetadataSchema = z.object({
+  model: z.string().trim().min(1),
+  durationMs: z.number().int().nonnegative(),
+  kind: z.enum(["initial", "refinement"]),
+  codeLines: z.number().int().nonnegative(),
+  codeBytes: z.number().int().nonnegative(),
+  schemaValidated: z.literal(true),
+});
+
+const generatedBuildSchema = generatedAppSchema.extend({
+  generationMetadata: generationMetadataSchema,
 });
 
 export const generateRequestSchema = z.object({
@@ -73,6 +90,10 @@ export function parseGeneratedApp(raw: string): GeneratedApp {
 
     throw new InvalidModelResponseError();
   }
+}
+
+export function parseGeneratedBuild(input: unknown): GeneratedBuild {
+  return generatedBuildSchema.parse(input);
 }
 
 export function parseGenerateRequest(input: unknown): GenerateRequest {

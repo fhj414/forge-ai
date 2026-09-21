@@ -49,6 +49,19 @@ const project: Project = {
   updatedAt: 1_700_000_000_000,
 };
 
+const projectWithMetadata: Project = {
+  ...project,
+  id: "project-with-metadata",
+  generationMetadata: {
+    model: "forge-test",
+    durationMs: 842,
+    kind: "initial",
+    codeLines: 3,
+    codeBytes: 59,
+    schemaValidated: true,
+  },
+};
+
 describe("project storage", () => {
   it("round-trips valid projects and the active id", () => {
     const storage = new MemoryStorage();
@@ -58,6 +71,13 @@ describe("project storage", () => {
 
     expect(loadProjects(storage)).toEqual([project]);
     expect(loadCurrentProjectId(storage)).toBe(project.id);
+  });
+
+  it("round-trips trusted generation metadata while accepting older projects without it", () => {
+    const storage = new MemoryStorage();
+
+    expect(saveProjects([projectWithMetadata, project], storage)).toBe(true);
+    expect(loadProjects(storage)).toEqual([projectWithMetadata, project]);
   });
 
   it("returns an empty list for corrupted or structurally invalid data", () => {

@@ -1,4 +1,4 @@
-import type { AppCode, Message } from "@/types/ai";
+import type { AppCode, GenerationMetadata, Message } from "@/types/ai";
 
 export interface Project extends AppCode {
   id: string;
@@ -6,6 +6,7 @@ export interface Project extends AppCode {
   description: string;
   messages: Message[];
   suggestions: string[];
+  generationMetadata?: GenerationMetadata;
   createdAt: number;
   updatedAt: number;
 }

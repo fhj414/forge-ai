@@ -9,7 +9,7 @@ import {
   saveProjects,
 } from "@/lib/storage";
 import { createId } from "@/lib/utils";
-import type { AppCode, GeneratedApp } from "@/types/ai";
+import type { AppCode, GeneratedBuild } from "@/types/ai";
 import type { Project } from "@/types/project";
 
 export function useProjects() {
@@ -57,7 +57,7 @@ export function useProjects() {
   );
 
   const commitGeneration = useCallback(
-    (result: GeneratedApp, prompt: string) => {
+    (result: GeneratedBuild, prompt: string) => {
       setPersistenceState("pending");
       const now = Date.now();
       const userMessage = {
@@ -86,6 +86,7 @@ export function useProjects() {
                   css: result.css,
                   javascript: result.javascript,
                   suggestions: result.suggestions,
+                  generationMetadata: result.generationMetadata,
                   messages: [
                     ...project.messages,
                     userMessage,
@@ -107,6 +108,7 @@ export function useProjects() {
         css: result.css,
         javascript: result.javascript,
         suggestions: result.suggestions,
+        generationMetadata: result.generationMetadata,
         messages: [userMessage, assistantMessage],
         createdAt: now,
         updatedAt: now,

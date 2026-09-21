@@ -25,13 +25,35 @@ export async function POST(request: Request) {
   try {
     const body: unknown = await request.json();
     const input = parseGenerateRequest(body);
+    const startedAt = Date.now();
     const result = await generateApplication(input, {
       apiKey,
       model,
       baseUrl: process.env.AI_API_BASE?.trim() || "https://openrouter.ai/api/v1",
     });
+    const sourceFiles = [result.html, result.css, result.javascript];
+    const codeLines = sourceFiles.reduce(
+      (total, source) =>
+        total + (source ? source.split(/\r\n|\r|\n/).length : 0),
+      0,
+    );
+    const codeBytes = sourceFiles.reduce(
+      (total, source) => total + new TextEncoder().encode(source).byteLength,
+      0,
+    );
+    const build = {
+      ...result,
+      generationMetadata: {
+        model,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        kind: input.currentCode ? "refinement" : "initial",
+        codeLines,
+        codeBytes,
+        schemaValidated: true as const,
+      },
+    };
 
-    return Response.json(result, {
+    return Response.json(build, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {

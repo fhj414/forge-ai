@@ -13,6 +13,15 @@ const messageSchema = z.object({
   changes: z.array(z.string()).optional(),
 });
 
+const generationMetadataSchema = z.object({
+  model: z.string(),
+  durationMs: z.number().int().nonnegative(),
+  kind: z.enum(["initial", "refinement"]),
+  codeLines: z.number().int().nonnegative(),
+  codeBytes: z.number().int().nonnegative(),
+  schemaValidated: z.literal(true),
+});
+
 const projectSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -22,6 +31,7 @@ const projectSchema = z.object({
   javascript: z.string(),
   messages: z.array(messageSchema),
   suggestions: z.array(z.string()),
+  generationMetadata: generationMetadataSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });

@@ -21,6 +21,19 @@ export interface GeneratedApp extends AppCode {
   suggestions: string[];
 }
 
+export interface GenerationMetadata {
+  model: string;
+  durationMs: number;
+  kind: "initial" | "refinement";
+  codeLines: number;
+  codeBytes: number;
+  schemaValidated: true;
+}
+
+export interface GeneratedBuild extends GeneratedApp {
+  generationMetadata: GenerationMetadata;
+}
+
 export interface GenerateRequest {
   prompt: string;
   currentCode?: AppCode;

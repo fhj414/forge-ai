@@ -6,7 +6,7 @@ import {
   GenerationRequestError,
   requestGeneration,
 } from "@/lib/client-api";
-import type { GeneratedApp, GenerateRequest } from "@/types/ai";
+import type { GeneratedBuild, GenerateRequest } from "@/types/ai";
 
 export type GenerationPhase =
   | "idle"
@@ -26,7 +26,7 @@ export function useGenerator() {
   );
 
   const generate = useCallback(
-    async (input: GenerateRequest): Promise<GeneratedApp | null> => {
+    async (input: GenerateRequest): Promise<GeneratedBuild | null> => {
       setError(null);
       setPhase("preparing");
       await Promise.resolve();

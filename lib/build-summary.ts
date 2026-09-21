@@ -1,10 +1,11 @@
-import type { AppCode } from "@/types/ai";
+import type { AppCode, GenerationMetadata } from "@/types/ai";
 
 export interface BuildSummary {
   components: number;
   interactions: number;
   responsive: boolean;
   persisted: boolean;
+  generationMetadata?: GenerationMetadata;
 }
 
 function countTags(source: string, tags: string[]) {
@@ -12,7 +13,10 @@ function countTags(source: string, tags: string[]) {
   return matches?.length ?? 0;
 }
 
-export function analyzeBuild(code: AppCode, persisted: boolean): BuildSummary {
+export function analyzeBuild(
+  code: AppCode & { generationMetadata?: GenerationMetadata },
+  persisted: boolean,
+): BuildSummary {
   const components = countTags(code.html, [
     "header",
     "nav",
@@ -36,5 +40,6 @@ export function analyzeBuild(code: AppCode, persisted: boolean): BuildSummary {
     interactions,
     responsive: /@media\s*\(/i.test(code.css),
     persisted,
+    generationMetadata: code.generationMetadata,
   };
 }

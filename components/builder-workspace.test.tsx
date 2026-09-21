@@ -12,10 +12,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BuilderWorkspace } from "@/components/builder-workspace";
-import type { GeneratedApp } from "@/types/ai";
+import type { GeneratedBuild } from "@/types/ai";
 import type { Project } from "@/types/project";
 
-function generated(overrides: Partial<GeneratedApp> = {}): GeneratedApp {
+function generated(overrides: Partial<GeneratedBuild> = {}): GeneratedBuild {
   return {
     title: "Expense Atlas",
     summary: "A personal finance dashboard with clear spending insights.",
@@ -24,6 +24,14 @@ function generated(overrides: Partial<GeneratedApp> = {}): GeneratedApp {
     javascript: "document.querySelector('#add')?.addEventListener('click', () => {});",
     changes: ["Balance cards", "Recent transactions"],
     suggestions: ["Add CSV export", "Add budget alerts"],
+    generationMetadata: {
+      model: "forge-test",
+      durationMs: 842,
+      kind: "initial",
+      codeLines: 3,
+      codeBytes: 154,
+      schemaValidated: true,
+    },
     ...overrides,
   };
 }
@@ -113,6 +121,9 @@ describe("BuilderWorkspace", () => {
       await screen.findByText("A personal finance dashboard with clear spending insights."),
     ).toBeInTheDocument();
     expect(screen.getByText("Build completed")).toBeInTheDocument();
+    expect(screen.getByText("forge-test")).toBeInTheDocument();
+    expect(screen.getByText("842 ms · 3 lines · 154 bytes")).toBeInTheDocument();
+    expect(screen.getByText("Schema validated")).toBeInTheDocument();
     expect(screen.getByText("Waiting for AI response")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add CSV export" })).toBeInTheDocument();
 
@@ -127,6 +138,19 @@ describe("BuilderWorkspace", () => {
     ) as { currentCode: { html: string }; prompt: string };
     expect(secondRequest.currentCode.html).toContain("Add transaction");
     expect(secondRequest.prompt).toContain("dark theme");
+    await waitFor(() => {
+      const projects = JSON.parse(
+        localStorage.getItem("forge-ai-projects") ?? "[]",
+      ) as Project[];
+      expect(projects[0]?.generationMetadata).toEqual({
+        model: "forge-test",
+        durationMs: 842,
+        kind: "initial",
+        codeLines: 3,
+        codeBytes: 154,
+        schemaValidated: true,
+      });
+    });
   });
 
   it("keeps the workspace stable on errors and retries the same prompt", async () => {

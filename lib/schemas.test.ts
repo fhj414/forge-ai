@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseGeneratedApp, parseGenerateRequest } from "@/lib/schemas";
+import {
+  parseGeneratedApp,
+  parseGeneratedBuild,
+  parseGenerateRequest,
+} from "@/lib/schemas";
 
 describe("parseGeneratedApp", () => {
   it("parses a fenced response and supplies optional collections", () => {
@@ -63,6 +67,54 @@ describe("parseGeneratedApp", () => {
       parseGenerateRequest({
         prompt: "Refine this app",
         currentCode: { html: oversized, css: "", javascript: "" },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("parseGeneratedBuild", () => {
+  it("accepts trusted server metadata separately from provider-authored source", () => {
+    expect(
+      parseGeneratedBuild({
+        title: "Expense Room",
+        summary: "A calm personal finance dashboard.",
+        html: "<main>Ledger</main>",
+        css: "main { color: white; }",
+        javascript: "console.log('ready')",
+        changes: ["Ledger layout"],
+        suggestions: ["Add budgets"],
+        generationMetadata: {
+          model: "forge-test",
+          durationMs: 842,
+          kind: "initial",
+          codeLines: 3,
+          codeBytes: 59,
+          schemaValidated: true,
+        },
+      }),
+    ).toMatchObject({
+      title: "Expense Room",
+      generationMetadata: {
+        model: "forge-test",
+        durationMs: 842,
+        kind: "initial",
+        codeLines: 3,
+        codeBytes: 59,
+        schemaValidated: true,
+      },
+    });
+  });
+
+  it("rejects a response that lacks trusted generation metadata", () => {
+    expect(() =>
+      parseGeneratedBuild({
+        title: "Expense Room",
+        summary: "A calm personal finance dashboard.",
+        html: "<main>Ledger</main>",
+        css: "main { color: white; }",
+        javascript: "console.log('ready')",
+        changes: [],
+        suggestions: [],
       }),
     ).toThrow();
   });

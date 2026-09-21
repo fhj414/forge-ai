@@ -1,6 +1,6 @@
-import { parseGeneratedApp } from "@/lib/schemas";
+import { parseGeneratedBuild } from "@/lib/schemas";
 import type {
-  GeneratedApp,
+  GeneratedBuild,
   GenerateErrorCode,
   GenerateErrorPayload,
   GenerateRequest,
@@ -38,7 +38,7 @@ export async function requestGeneration(
   input: GenerateRequest,
   onResponse?: () => void,
   fetcher: typeof fetch = fetch,
-): Promise<GeneratedApp> {
+): Promise<GeneratedBuild> {
   let response: Response;
 
   try {
@@ -70,7 +70,7 @@ export async function requestGeneration(
   onResponse?.();
 
   try {
-    return parseGeneratedApp(JSON.stringify(payload));
+    return parseGeneratedBuild(payload);
   } catch {
     throw new GenerationRequestError(
       "INVALID_MODEL_RESPONSE",

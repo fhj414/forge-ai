@@ -41,4 +41,34 @@ describe("analyzeBuild", () => {
       persisted: false,
     });
   });
+
+  it("includes trusted generation metadata when a project has it", () => {
+    expect(
+      analyzeBuild(
+        {
+          html: "<main>Ledger</main>",
+          css: "body{}",
+          javascript: "",
+          generationMetadata: {
+            model: "forge-test",
+            durationMs: 842,
+            kind: "initial",
+            codeLines: 2,
+            codeBytes: 24,
+            schemaValidated: true,
+          },
+        },
+        true,
+      ),
+    ).toMatchObject({
+      generationMetadata: {
+        model: "forge-test",
+        durationMs: 842,
+        kind: "initial",
+        codeLines: 2,
+        codeBytes: 24,
+        schemaValidated: true,
+      },
+    });
+  });
 });

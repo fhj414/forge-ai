@@ -19,6 +19,7 @@ function makeRequest(body: unknown) {
 describe("POST /api/generate", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     process.env.AI_API_KEY = envSnapshot.AI_API_KEY;
     process.env.AI_API_BASE = envSnapshot.AI_API_BASE;
     process.env.AI_MODEL = envSnapshot.AI_MODEL;
@@ -91,10 +92,11 @@ describe("POST /api/generate", () => {
     );
   });
 
-  it("returns the validated application payload", async () => {
+  it("returns a validated build with real metadata for an initial generation", async () => {
     process.env.AI_API_KEY = "test-key";
     process.env.AI_API_BASE = "https://llm.example/v1";
     process.env.AI_MODEL = "forge-test";
+    vi.spyOn(Date, "now").mockReturnValueOnce(100).mockReturnValueOnce(345);
     vi.stubGlobal(
       "fetch",
       vi.fn<typeof fetch>().mockResolvedValue(
@@ -106,9 +108,9 @@ describe("POST /api/generate", () => {
                   content: `\`\`\`json\n${JSON.stringify({
                     title: "Task Orbit",
                     summary: "A focused task manager.",
-                    html: "<main>Tasks</main>",
+                    html: "<main>\né</main>",
                     css: "body{}",
-                    javascript: "",
+                    javascript: "console.log('ok')",
                     changes: ["Task list"],
                     suggestions: ["Add keyboard shortcuts"],
                   })}\n\`\`\``,
@@ -124,9 +126,63 @@ describe("POST /api/generate", () => {
     const response = await POST(makeRequest({ prompt: "Build a task manager" }));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    await expect(response.json()).resolves.toEqual({
       title: "Task Orbit",
+      summary: "A focused task manager.",
+      html: "<main>\né</main>",
+      css: "body{}",
+      javascript: "console.log('ok')",
+      changes: ["Task list"],
       suggestions: ["Add keyboard shortcuts"],
+      generationMetadata: {
+        model: "forge-test",
+        durationMs: 245,
+        kind: "initial",
+        codeLines: 4,
+        codeBytes: 39,
+        schemaValidated: true,
+      },
+    });
+  });
+
+  it("marks requests with current source as refinements", async () => {
+    process.env.AI_API_KEY = "test-key";
+    process.env.AI_MODEL = "forge-test";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    title: "Task Orbit",
+                    summary: "A refined task manager.",
+                    html: "<main>Tasks</main>",
+                    css: "body{}",
+                    javascript: "",
+                    changes: ["Task filters"],
+                    suggestions: [],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const response = await POST(
+      makeRequest({
+        prompt: "Add filters",
+        currentCode: { html: "<main>Tasks</main>", css: "body{}", javascript: "" },
+      }),
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      generationMetadata: { kind: "refinement" },
     });
   });
 });
