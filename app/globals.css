@@ -1237,7 +1237,8 @@ textarea:focus-visible {
   font-size: 9px;
 }
 
-.version-history-button {
+.version-history-button,
+.preview-export-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1252,12 +1253,14 @@ textarea:focus-visible {
   font-size: 9px;
 }
 
-.version-history-button:hover:not(:disabled) {
+.version-history-button:hover:not(:disabled),
+.preview-export-button:hover:not(:disabled) {
   color: var(--text);
   background: var(--panel-soft);
 }
 
-.version-history-button:disabled {
+.version-history-button:disabled,
+.preview-export-button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
 }

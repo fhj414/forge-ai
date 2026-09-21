@@ -1,9 +1,18 @@
 "use client";
 
-import { Code2, Eye, History, Monitor, Smartphone, Tablet } from "lucide-react";
+import {
+  Code2,
+  Download,
+  Eye,
+  History,
+  Monitor,
+  Smartphone,
+  Tablet,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { CodeViewer } from "@/components/code-viewer";
+import { downloadProjectHtml } from "@/lib/export-project";
 import { composePreviewDocument } from "@/lib/preview";
 import type { AppCode } from "@/types/ai";
 import type { Project } from "@/types/project";
@@ -91,6 +100,16 @@ export function PreviewPanel({
                   : "390px"}
             </span>
           </div>
+        ) : null}
+        {project ? (
+          <button
+            className="preview-export-button"
+            type="button"
+            onClick={() => downloadProjectHtml(project)}
+            aria-label="Download HTML"
+          >
+            <Download size={14} /> Download HTML
+          </button>
         ) : null}
         {project && onOpenVersionHistory ? (
           <button

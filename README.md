@@ -22,6 +22,8 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 6. Users can edit any generated source file, apply it to the preview, or discard the draft.
 7. Follow-up prompts include the current source so the model edits instead of restarting.
 8. Projects, source, suggestions, and conversation history persist in the browser.
+9. Every generated build records trusted model, timing, source-size, and validation metadata.
+10. The Preview toolbar downloads the active project as a standalone HTML application.
 
 ## Features
 
@@ -32,6 +34,9 @@ Prompt → Agent execution → Validated code → Sandboxed preview → Local pr
 - Editable HTML, CSS, and JavaScript with Apply, Discard, copy, dirty state, and `Cmd/Ctrl + S`
 - Iterative editing that sends the current source back to the model
 - Local-first project persistence and history restore/delete
+- Capped version history with one-click restore and revision source labels
+- Trusted generation metadata for model, duration, source size, and schema validation
+- Standalone `Download HTML` export with embedded preview compatibility runtime
 - Visible persistence failure feedback when browser storage is unavailable
 - Suggested improvements that become one-click refinement prompts
 - Deterministic AI Build Summary based on generated structure and controls
@@ -91,6 +96,15 @@ The backend uses OpenRouter's standard chat-completions HTTP contract instead of
 ### 5. Preserve the last valid build
 
 Network and model errors are represented as recoverable UI state. A failed refinement does not clear or mutate the current project; Retry resubmits the same prompt against the same source.
+
+### 6. Delivery confidence
+
+Each successful build stores the configured model, measured request duration, source line and byte counts, and a
+`schemaValidated: true` marker. The active project keeps the ten most recent prior revisions, including manual edits
+and restores, while conversation messages remain an audit trail. `Download HTML` reuses the exact document composer
+used by the sandboxed preview, so forms, browser storage compatibility, native Chart-style rendering, and CSP remain
+available in the one-file export. API keys and server-only environment variables never enter projects, revisions, or
+downloads.
 
 ## Local development
 
@@ -155,12 +169,10 @@ types/                       Shared strict TypeScript models
 
 - Streaming generation and step events
 - Stronger static validation for generated JavaScript and unsafe HTML
-- Import/export backup for local projects
 
 ### P1
 
 - Multi-file React generation with Sandpack or WebContainer
-- Version history and rollback
 - Authenticated database persistence and cross-device sync
 
 ### P2
