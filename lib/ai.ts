@@ -65,67 +65,68 @@ export async function generateApplication(
     ...(input.conversation ?? []).slice(-12),
     { role: "user", content: refinementContext(input) },
   ];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? 55_000);
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? 45_000);
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetcher(providerUrl(config.baseUrl), {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: config.model,
+            messages,
+            temperature: 0.35,
+            response_format: { type: "json_object" },
+          }),
+          signal: controller.signal,
+        });
 
-    try {
-      const response = await fetcher(providerUrl(config.baseUrl), {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages,
-          temperature: 0.35,
-          response_format: { type: "json_object" },
-        }),
-        signal: controller.signal,
-      });
+        if (!response.ok) {
+          const retryable = response.status === 429 || response.status >= 500;
+          if (retryable && attempt === 0) {
+            continue;
+          }
 
-      if (!response.ok) {
-        const retryable = response.status === 429 || response.status >= 500;
-        if (retryable && attempt === 0) {
+          throw new AIClientError(
+            "AI_UPSTREAM_ERROR",
+            `AI provider returned ${response.status}.`,
+          );
+        }
+
+        const payload = (await response.json()) as ProviderResponse;
+        const content = payload.choices?.[0]?.message?.content;
+
+        if (typeof content !== "string" || content.trim().length === 0) {
+          throw new InvalidModelResponseError();
+        }
+
+        return parseGeneratedApp(content);
+      } catch (error) {
+        if (error instanceof InvalidModelResponseError || error instanceof AIClientError) {
+          throw error;
+        }
+
+        if (isAbortError(error)) {
+          throw new AIClientError("AI_TIMEOUT", "The AI request timed out.");
+        }
+
+        if (attempt === 0) {
           continue;
         }
 
         throw new AIClientError(
-          "AI_UPSTREAM_ERROR",
-          `AI provider returned ${response.status}.`,
+          "NETWORK_ERROR",
+          "Could not reach the AI provider.",
         );
       }
-
-      const payload = (await response.json()) as ProviderResponse;
-      const content = payload.choices?.[0]?.message?.content;
-
-      if (typeof content !== "string" || content.trim().length === 0) {
-        throw new InvalidModelResponseError();
-      }
-
-      return parseGeneratedApp(content);
-    } catch (error) {
-      if (error instanceof InvalidModelResponseError || error instanceof AIClientError) {
-        throw error;
-      }
-
-      if (attempt === 0) {
-        continue;
-      }
-
-      if (isAbortError(error)) {
-        throw new AIClientError("AI_TIMEOUT", "The AI request timed out.");
-      }
-
-      throw new AIClientError(
-        "NETWORK_ERROR",
-        "Could not reach the AI provider.",
-      );
-    } finally {
-      clearTimeout(timeout);
     }
+  } finally {
+    clearTimeout(timeout);
   }
 
   throw new AIClientError("AI_UPSTREAM_ERROR", "AI generation failed.");

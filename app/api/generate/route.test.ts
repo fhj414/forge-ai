@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { POST } from "@/app/api/generate/route";
+import { maxDuration, POST } from "@/app/api/generate/route";
 
 const envSnapshot = {
   AI_API_KEY: process.env.AI_API_KEY,
@@ -23,6 +23,10 @@ describe("POST /api/generate", () => {
     process.env.AI_API_KEY = envSnapshot.AI_API_KEY;
     process.env.AI_API_BASE = envSnapshot.AI_API_BASE;
     process.env.AI_MODEL = envSnapshot.AI_MODEL;
+  });
+
+  it("allows the shared AI deadline to finish on Vercel", () => {
+    expect(maxDuration).toBe(60);
   });
 
   it("returns a specific error when the AI service is not configured", async () => {

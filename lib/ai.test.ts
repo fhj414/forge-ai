@@ -71,9 +71,12 @@ describe("generateApplication", () => {
       title: "Dark Ledger",
     });
     expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(
+      fetcher.mock.calls[1]?.[1]?.signal,
+    );
   });
 
-  it("maps repeated aborts to a timeout error", async () => {
+  it("does not retry a timed-out request", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockRejectedValue(new DOMException("Request aborted", "AbortError"));
@@ -81,7 +84,7 @@ describe("generateApplication", () => {
     await expect(generateApplication(request, config, fetcher)).rejects.toMatchObject({
       code: "AI_TIMEOUT",
     });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("rejects malformed model output", async () => {

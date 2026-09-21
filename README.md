@@ -71,7 +71,7 @@ flowchart LR
   ProjectStore --> LocalStorage[(localStorage)]
 ```
 
-The client never receives the AI key. `/api/generate` adds the dedicated system prompt, applies a 45-second timeout, retries one transient failure, strips Markdown fences, extracts JSON, and validates every field before returning a result.
+The client never receives the AI key. `/api/generate` adds the dedicated system prompt, applies one shared 55-second request budget, retries one transient provider or network failure only within that budget, strips Markdown fences, extracts JSON, and validates every field before returning a result. A timeout is returned immediately instead of starting another full model request.
 
 ## Key engineering decisions
 
@@ -142,7 +142,7 @@ Configure OpenRouter in `.env.local` (the default model favors fast code generat
 ```env
 AI_API_KEY=your_api_key_here
 AI_API_BASE=https://openrouter.ai/api/v1
-AI_MODEL=z-ai/glm-5.3-flashx
+AI_MODEL=qwen/qwen3.5-35b-a3b:nitro
 ```
 
 When any required value is missing, the UI shows `AI service is not configured.` and offers Retry; it does not expose a server stack trace.
