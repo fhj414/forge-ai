@@ -9,12 +9,16 @@ import {
   Smartphone,
   Tablet,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CodeViewer } from "@/components/code-viewer";
+import { PreviewHealth } from "@/components/preview-health";
 import { downloadProjectHtml } from "@/lib/export-project";
+import { parsePreviewHealthMessage } from "@/lib/preview-health";
 import { composePreviewDocument } from "@/lib/preview";
+import { createId } from "@/lib/utils";
 import type { AppCode } from "@/types/ai";
+import type { PreviewHealthReport, PreviewHealthState } from "@/types/preview-health";
 import type { Project } from "@/types/project";
 
 type PanelMode = "preview" | "code";
@@ -37,6 +41,8 @@ export function PreviewPanel({
   onApplyCode = () => {},
   onOpenVersionHistory,
   onDirtyChange,
+  onRepair,
+  repairDisabled = false,
 }: {
   project: Project | null;
   disabled?: boolean;
@@ -44,13 +50,58 @@ export function PreviewPanel({
   onApplyCode?: (code: AppCode) => void;
   onOpenVersionHistory?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onRepair?: (report: PreviewHealthReport) => void;
+  repairDisabled?: boolean;
 }) {
   const [mode, setMode] = useState<PanelMode>("preview");
   const [viewport, setViewport] = useState<Viewport>("desktop");
-  const srcDoc = useMemo(
-    () => (project ? composePreviewDocument(project) : ""),
-    [project],
+  const [retryCount, setRetryCount] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const hasProject = Boolean(project);
+  const sessionKey = `${project?.id ?? "none"}:${project?.updatedAt ?? "none"}:${retryCount}`;
+  const diagnosticSession = useMemo(
+    () => ({ id: createId("preview-health"), key: sessionKey }),
+    [sessionKey],
   );
+  const sessionId = diagnosticSession.id;
+  const [healthState, setHealthState] = useState<PreviewHealthState>(() =>
+    checkingState(sessionId),
+  );
+  const srcDoc = useMemo(
+    () =>
+      project
+        ? composePreviewDocument(project, { diagnosticSessionId: sessionId })
+        : "",
+    [project, sessionId],
+  );
+  const displayedHealthState =
+    healthState.sessionId === sessionId ? healthState : checkingState(sessionId);
+
+  useEffect(() => {
+    function receivePreviewHealth(event: MessageEvent) {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+
+      const report = parsePreviewHealthMessage(event.data, sessionId);
+      if (report) setHealthState(report);
+    }
+
+    window.addEventListener("message", receivePreviewHealth);
+    return () => window.removeEventListener("message", receivePreviewHealth);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!hasProject) return;
+
+    const timeout = window.setTimeout(() => {
+      setHealthState((current) =>
+        current.sessionId !== sessionId || current.status === "checking"
+          ? { status: "unavailable", sessionId }
+          : current,
+      );
+    }, 3_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [hasProject, sessionId]);
 
   function applyCode(code: AppCode) {
     onApplyCode(code);
@@ -126,6 +177,15 @@ export function PreviewPanel({
         ) : null}
       </div>
 
+      {project ? (
+        <PreviewHealth
+          state={displayedHealthState}
+          onRepair={onRepair}
+          onRetry={() => setRetryCount((count) => count + 1)}
+          repairDisabled={repairDisabled}
+        />
+      ) : null}
+
       <div className="preview-body">
         {!project ? (
           <div className="preview-empty">
@@ -149,7 +209,8 @@ export function PreviewPanel({
                 data-testid="preview-frame-shell"
               >
                 <iframe
-                  key={project.updatedAt}
+                  ref={iframeRef}
+                  key={sessionId}
                   title="Generated app preview"
                   sandbox="allow-scripts allow-forms"
                   srcDoc={srcDoc}
@@ -170,6 +231,20 @@ export function PreviewPanel({
       </div>
     </section>
   );
+}
+
+function checkingState(sessionId: string): PreviewHealthReport {
+  return {
+    channel: "forge:preview-health",
+    version: 1,
+    sessionId,
+    status: "checking",
+    hasMeaningfulContent: false,
+    interactiveControls: 0,
+    forms: 0,
+    issues: [],
+    reportedAt: Date.now(),
+  };
 }
 
 function SparkGlyph() {

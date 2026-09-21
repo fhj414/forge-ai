@@ -769,6 +769,89 @@ textarea:focus-visible {
   background: #0d1013;
 }
 
+.preview-health {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #0b0e11;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.preview-health-status {
+  margin: 0;
+  color: var(--text-soft);
+  font-weight: 650;
+}
+
+.preview-health[data-status="healthy"] .preview-health-status {
+  color: var(--accent);
+}
+
+.preview-health[data-status="issues"] .preview-health-status {
+  color: var(--danger);
+}
+
+.preview-health[data-status="unavailable"] .preview-health-status {
+  color: #e8d45c;
+}
+
+.preview-health-facts,
+.preview-health-issues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-dim);
+  list-style: none;
+}
+
+.preview-health-issues {
+  flex-basis: 100%;
+  display: block;
+  color: var(--text-soft);
+}
+
+.preview-health-issues li {
+  overflow-wrap: anywhere;
+}
+
+.preview-health-issues li + li {
+  margin-top: 2px;
+}
+
+.preview-health-action {
+  min-height: 26px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 1px solid var(--line-bright);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--panel-soft);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.preview-health[data-status="issues"] .preview-health-action {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+
+.preview-health-action:hover:not(:disabled) {
+  border-color: var(--text-dim);
+  background: #1b2126;
+}
+
+.preview-health-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .panel-tabs,
 .code-tabs,
 .viewport-controls {
@@ -1421,6 +1504,19 @@ textarea:focus-visible {
 
   .preview-toolbar {
     padding-inline: 8px;
+  }
+
+  .preview-health {
+    align-items: flex-start;
+    padding-inline: 8px;
+  }
+
+  .preview-health-facts {
+    flex-basis: 100%;
+  }
+
+  .preview-health-action {
+    margin-left: 0;
   }
 
   .preview-actions {
