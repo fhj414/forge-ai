@@ -70,6 +70,21 @@ const restoredProject: Project = {
   suggestions: ["Add keyboard shortcuts"],
   createdAt: 1_700_000_000_000,
   updatedAt: 1_700_000_001_000,
+  revisionSource: "refinement",
+  revisionCreatedAt: 1_700_000_001_000,
+  revisions: [
+    {
+      id: "initial-version",
+      source: "initial",
+      createdAt: 1_700_000_000_000,
+      title: "Initial Tasks",
+      description: "The original task manager.",
+      html: "<main><h1>Initial tasks</h1></main>",
+      css: "body { color: black; }",
+      javascript: "",
+      suggestions: ["Add priorities"],
+    },
+  ],
 };
 
 describe("BuilderWorkspace", () => {
@@ -252,6 +267,26 @@ describe("BuilderWorkspace", () => {
     expect(await screen.findByText("A focused task manager.")).toBeInTheDocument();
   });
 
+  it("opens version history with source labels and restores the selected version", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
+    localStorage.setItem("forge-ai-current-project", restoredProject.id);
+    render(<BuilderWorkspace />);
+
+    await screen.findByText("A focused task manager.");
+    await user.click(screen.getByRole("button", { name: /open version history/i }));
+
+    const drawer = screen.getByRole("dialog", { name: /version history/i });
+    expect(within(drawer).getByText("Initial AI")).toBeInTheDocument();
+    expect(within(drawer).getByText("Initial Tasks")).toBeInTheDocument();
+    await user.click(within(drawer).getByRole("button", { name: /restore initial tasks/i }));
+
+    expect(await screen.findByTitle("Generated app preview")).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("<main><h1>Initial tasks</h1></main>"),
+    );
+  });
+
   it("switches preview widths, shows source, and deletes with confirmation", async () => {
     const user = userEvent.setup();
     localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
@@ -405,6 +440,9 @@ describe("BuilderWorkspace", () => {
       screen.getByText("Apply or discard code changes before refining."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /refine app/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /open version history/i }),
+    ).toBeDisabled();
     expect(fetch).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: /discard/i }));
@@ -412,6 +450,9 @@ describe("BuilderWorkspace", () => {
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     expect(editor).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /open version history/i }),
+    ).toBeDisabled();
 
     finishRequest?.(
       new Response(

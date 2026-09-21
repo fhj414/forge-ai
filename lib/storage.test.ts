@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PROJECTS_STORAGE_KEY,
   loadCurrentProjectId,
   loadProjects,
   saveCurrentProjectId,
@@ -47,6 +48,9 @@ const project: Project = {
   suggestions: ["Add export"],
   createdAt: 1_700_000_000_000,
   updatedAt: 1_700_000_000_000,
+  revisionSource: "initial",
+  revisionCreatedAt: 1_700_000_000_000,
+  revisions: [],
 };
 
 const projectWithMetadata: Project = {
@@ -78,6 +82,24 @@ describe("project storage", () => {
 
     expect(saveProjects([projectWithMetadata, project], storage)).toBe(true);
     expect(loadProjects(storage)).toEqual([projectWithMetadata, project]);
+  });
+
+  it("migrates saved projects without revision history to initial revision defaults", () => {
+    const storage = new MemoryStorage();
+    const legacyProject: Partial<Project> = { ...project };
+    delete legacyProject.revisionSource;
+    delete legacyProject.revisionCreatedAt;
+    delete legacyProject.revisions;
+    storage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify([legacyProject]));
+
+    expect(loadProjects(storage)).toEqual([
+      {
+        ...project,
+        revisionSource: "initial",
+        revisionCreatedAt: project.updatedAt,
+        revisions: [],
+      },
+    ]);
   });
 
   it("returns an empty list for corrupted or structurally invalid data", () => {

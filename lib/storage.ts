@@ -22,6 +22,21 @@ const generationMetadataSchema = z.object({
   schemaValidated: z.literal(true),
 });
 
+const revisionSourceSchema = z.enum(["initial", "refinement", "manual", "restore"]);
+
+const projectRevisionSchema = z.object({
+  id: z.string(),
+  source: revisionSourceSchema,
+  createdAt: z.number(),
+  title: z.string(),
+  description: z.string(),
+  html: z.string(),
+  css: z.string(),
+  javascript: z.string(),
+  suggestions: z.array(z.string()),
+  generationMetadata: generationMetadataSchema.optional(),
+});
+
 const projectSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -34,7 +49,15 @@ const projectSchema = z.object({
   generationMetadata: generationMetadataSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
-});
+  revisionSource: revisionSourceSchema.optional(),
+  revisionCreatedAt: z.number().optional(),
+  revisions: z.array(projectRevisionSchema).optional(),
+}).transform((project) => ({
+  ...project,
+  revisionSource: project.revisionSource ?? "initial",
+  revisionCreatedAt: project.revisionCreatedAt ?? project.updatedAt,
+  revisions: project.revisions ?? [],
+}));
 
 const projectsSchema = z.array(projectSchema);
 
@@ -58,7 +81,7 @@ export function loadProjects(storage?: Storage): Project[] {
     }
 
     const result = projectsSchema.safeParse(JSON.parse(value));
-    return result.success ? result.data : [];
+    return result.success ? (result.data as Project[]) : [];
   } catch {
     return [];
   }

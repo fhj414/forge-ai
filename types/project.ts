@@ -1,5 +1,17 @@
 import type { AppCode, GenerationMetadata, Message } from "@/types/ai";
 
+export type RevisionSource = "initial" | "refinement" | "manual" | "restore";
+
+export interface ProjectRevision extends AppCode {
+  id: string;
+  source: RevisionSource;
+  createdAt: number;
+  title: string;
+  description: string;
+  suggestions: string[];
+  generationMetadata?: GenerationMetadata;
+}
+
 export interface Project extends AppCode {
   id: string;
   title: string;
@@ -9,4 +21,7 @@ export interface Project extends AppCode {
   generationMetadata?: GenerationMetadata;
   createdAt: number;
   updatedAt: number;
+  revisionSource: RevisionSource;
+  revisionCreatedAt: number;
+  revisions: ProjectRevision[];
 }

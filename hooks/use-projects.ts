@@ -10,7 +10,32 @@ import {
 } from "@/lib/storage";
 import { createId } from "@/lib/utils";
 import type { AppCode, GeneratedBuild } from "@/types/ai";
-import type { Project } from "@/types/project";
+import type { Project, ProjectRevision } from "@/types/project";
+
+const MAX_PRIOR_REVISIONS = 10;
+
+function snapshotProject(project: Project): ProjectRevision {
+  return {
+    id: createId("version"),
+    source: project.revisionSource,
+    createdAt: project.revisionCreatedAt,
+    title: project.title,
+    description: project.description,
+    html: project.html,
+    css: project.css,
+    javascript: project.javascript,
+    suggestions: project.suggestions,
+    generationMetadata: project.generationMetadata,
+  };
+}
+
+function addSnapshot(project: Project, revisions = project.revisions) {
+  return [snapshotProject(project), ...revisions].slice(0, MAX_PRIOR_REVISIONS);
+}
+
+function nextUpdatedAt(project: Project) {
+  return Math.max(Date.now(), project.updatedAt + 1);
+}
 
 export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -78,22 +103,28 @@ export function useProjects() {
         setProjects((existing) =>
           existing.map((project) =>
             project.id === currentProjectId
-              ? {
-                  ...project,
-                  title: result.title,
-                  description: result.summary,
-                  html: result.html,
-                  css: result.css,
-                  javascript: result.javascript,
-                  suggestions: result.suggestions,
-                  generationMetadata: result.generationMetadata,
-                  messages: [
-                    ...project.messages,
-                    userMessage,
-                    assistantMessage,
-                  ],
-                  updatedAt: now,
-                }
+              ? (() => {
+                  const updatedAt = nextUpdatedAt(project);
+                  return {
+                    ...project,
+                    title: result.title,
+                    description: result.summary,
+                    html: result.html,
+                    css: result.css,
+                    javascript: result.javascript,
+                    suggestions: result.suggestions,
+                    generationMetadata: result.generationMetadata,
+                    messages: [
+                      ...project.messages,
+                      userMessage,
+                      assistantMessage,
+                    ],
+                    revisionSource: "refinement" as const,
+                    revisionCreatedAt: updatedAt,
+                    revisions: addSnapshot(project),
+                    updatedAt,
+                  };
+                })()
               : project,
           ),
         );
@@ -112,6 +143,9 @@ export function useProjects() {
         messages: [userMessage, assistantMessage],
         createdAt: now,
         updatedAt: now,
+        revisionSource: "initial",
+        revisionCreatedAt: now,
+        revisions: [],
       };
 
       setProjects((existing) => [project, ...existing]);
@@ -154,15 +188,57 @@ export function useProjects() {
       setProjects((existing) =>
         existing.map((project) =>
           project.id === currentProjectId
-            ? {
-                ...project,
-                html: code.html,
-                css: code.css,
-                javascript: code.javascript,
-                updatedAt: Math.max(Date.now(), project.updatedAt + 1),
-              }
+            ? (() => {
+                const updatedAt = nextUpdatedAt(project);
+                return {
+                  ...project,
+                  html: code.html,
+                  css: code.css,
+                  javascript: code.javascript,
+                  revisionSource: "manual" as const,
+                  revisionCreatedAt: updatedAt,
+                  revisions: addSnapshot(project),
+                  updatedAt,
+                };
+              })()
             : project,
         ),
+      );
+    },
+    [currentProjectId],
+  );
+
+  const restoreProjectVersion = useCallback(
+    (versionId: string) => {
+      if (!currentProjectId) return;
+
+      setPersistenceState("pending");
+      setProjects((existing) =>
+        existing.map((project) => {
+          if (project.id !== currentProjectId) return project;
+
+          const revision = project.revisions.find((item) => item.id === versionId);
+          if (!revision) return project;
+
+          const updatedAt = nextUpdatedAt(project);
+          return {
+            ...project,
+            title: revision.title,
+            description: revision.description,
+            html: revision.html,
+            css: revision.css,
+            javascript: revision.javascript,
+            suggestions: revision.suggestions,
+            generationMetadata: revision.generationMetadata,
+            revisionSource: "restore",
+            revisionCreatedAt: updatedAt,
+            revisions: addSnapshot(
+              project,
+              project.revisions.filter((item) => item.id !== versionId),
+            ),
+            updatedAt,
+          };
+        }),
       );
     },
     [currentProjectId],
@@ -178,5 +254,6 @@ export function useProjects() {
     restoreProject,
     deleteProject,
     updateCurrentProject,
+    restoreProjectVersion,
   };
 }

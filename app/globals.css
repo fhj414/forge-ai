@@ -1237,6 +1237,83 @@ textarea:focus-visible {
   font-size: 9px;
 }
 
+.version-history-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 27px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.version-history-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--panel-soft);
+}
+
+.version-history-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.version-history-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.version-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101418;
+}
+
+.version-history-details {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.version-history-details strong,
+.version-history-details small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-history-details strong {
+  font-size: 11px;
+}
+
+.version-history-details small {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.version-source {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.version-restore-button {
+  flex: 0 0 auto;
+}
+
 .spin {
   animation: spin 800ms linear infinite;
 }

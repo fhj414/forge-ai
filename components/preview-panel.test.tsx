@@ -17,6 +17,9 @@ const project: Project = {
   suggestions: [],
   createdAt: 1_700_000_000_000,
   updatedAt: 1_700_000_000_001,
+  revisionSource: "initial",
+  revisionCreatedAt: 1_700_000_000_001,
+  revisions: [],
 };
 
 describe("PreviewPanel", () => {

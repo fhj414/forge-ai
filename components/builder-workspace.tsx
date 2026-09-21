@@ -9,6 +9,7 @@ import {
 } from "@/components/chat-panel";
 import { PreviewPanel } from "@/components/preview-panel";
 import { ProjectHistory } from "@/components/project-history";
+import { VersionHistory } from "@/components/version-history";
 import { PromptInput } from "@/components/prompt-input";
 import { useGenerator } from "@/hooks/use-generator";
 import { useProjects } from "@/hooks/use-projects";
@@ -39,6 +40,7 @@ export function BuilderWorkspace() {
   const [prompt, setPrompt] = useState("");
   const [pendingPrompt, setPendingPrompt] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [hasUnsavedCode, setHasUnsavedCode] = useState(false);
   const projectState = useProjects();
   const generator = useGenerator();
@@ -88,6 +90,7 @@ export function BuilderWorkspace() {
     setPrompt("");
     setPendingPrompt("");
     setHasUnsavedCode(false);
+    setVersionHistoryOpen(false);
   }
 
   function openProject(id: string) {
@@ -97,6 +100,7 @@ export function BuilderWorkspace() {
     setPendingPrompt("");
     setHasUnsavedCode(false);
     setHistoryOpen(false);
+    setVersionHistoryOpen(false);
   }
 
   return (
@@ -144,8 +148,10 @@ export function BuilderWorkspace() {
         <PreviewPanel
           project={projectState.currentProject}
           disabled={generator.isGenerating}
+          versionHistoryDisabled={generator.isGenerating || hasUnsavedCode}
           onApplyCode={projectState.updateCurrentProject}
           onDirtyChange={setHasUnsavedCode}
+          onOpenVersionHistory={() => setVersionHistoryOpen(true)}
         />
       </div>
 
@@ -156,6 +162,13 @@ export function BuilderWorkspace() {
         onClose={() => setHistoryOpen(false)}
         onOpen={openProject}
         onDelete={projectState.deleteProject}
+      />
+      <VersionHistory
+        open={versionHistoryOpen}
+        project={projectState.currentProject}
+        disabled={generator.isGenerating || hasUnsavedCode}
+        onClose={() => setVersionHistoryOpen(false)}
+        onRestore={projectState.restoreProjectVersion}
       />
     </main>
   );

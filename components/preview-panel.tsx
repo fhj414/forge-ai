@@ -1,6 +1,6 @@
 "use client";
 
-import { Code2, Eye, Monitor, Smartphone, Tablet } from "lucide-react";
+import { Code2, Eye, History, Monitor, Smartphone, Tablet } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { CodeViewer } from "@/components/code-viewer";
@@ -24,12 +24,16 @@ const VIEWPORTS: Array<{
 export function PreviewPanel({
   project,
   disabled = false,
+  versionHistoryDisabled = false,
   onApplyCode = () => {},
+  onOpenVersionHistory,
   onDirtyChange,
 }: {
   project: Project | null;
   disabled?: boolean;
+  versionHistoryDisabled?: boolean;
   onApplyCode?: (code: AppCode) => void;
+  onOpenVersionHistory?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [mode, setMode] = useState<PanelMode>("preview");
@@ -87,6 +91,17 @@ export function PreviewPanel({
                   : "390px"}
             </span>
           </div>
+        ) : null}
+        {project && onOpenVersionHistory ? (
+          <button
+            className="version-history-button"
+            type="button"
+            disabled={versionHistoryDisabled}
+            onClick={onOpenVersionHistory}
+            aria-label="Open version history"
+          >
+            <History size={14} /> Versions
+          </button>
         ) : null}
       </div>
 
