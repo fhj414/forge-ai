@@ -3,6 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import "@/app/globals.css";
 import { PreviewHealth } from "@/components/preview-health";
 import type { PreviewHealthReport, PreviewHealthState } from "@/types/preview-health";
 
@@ -96,6 +97,34 @@ describe("PreviewHealth", () => {
     expect(screen.getByText("5 preview issues detected")).toBeInTheDocument();
     expect(screen.getByText("Issue 5")).toBeInTheDocument();
     expect(screen.queryByText("Issue 6")).not.toBeInTheDocument();
+  });
+
+  it("bounds five maximum-length diagnostics so the repair action stays reachable at 390px", () => {
+    const maximumLengthDiagnostic = "x".repeat(500);
+    render(
+      <div style={{ width: 390 }}>
+        <PreviewHealth
+          state={report({
+            status: "issues",
+            issues: Array.from({ length: 5 }, (_, index) => ({
+              message: `${index + 1}: ${maximumLengthDiagnostic}`,
+            })),
+          })}
+          onRepair={vi.fn()}
+        />
+      </div>,
+    );
+
+    const repair = screen.getByRole("button", { name: "Ask AI to fix" });
+    const issues = screen.getByRole("list", { name: "Preview issues" });
+
+    expect(issues).toHaveStyle({
+      maxBlockSize: "min(5rem, 16dvh)",
+      overflowY: "auto",
+    });
+    expect(repair.compareDocumentPosition(issues)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it("offers a single retry when the check is unavailable", () => {

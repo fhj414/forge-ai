@@ -51,12 +51,6 @@ export function PreviewHealth({
       <p className="preview-health-status">
         {issueCount} preview issue{issueCount === 1 ? "" : "s"} detected
       </p>
-      <ul className="preview-health-issues">
-        {issues.map((issue, index) => (
-          <li key={`${issue.message}-${index}`}>{issue.message}</li>
-        ))}
-      </ul>
-      <PreviewHealthFacts report={state} />
       {issueCount > 0 ? (
         <button
           className="preview-health-action"
@@ -67,6 +61,17 @@ export function PreviewHealth({
           Ask AI to fix
         </button>
       ) : null}
+      <ul
+        className="preview-health-issues"
+        aria-label="Preview issues"
+        tabIndex={0}
+        style={{ maxBlockSize: "min(5rem, 16dvh)", overflowY: "auto" }}
+      >
+        {issues.map((issue, index) => (
+          <li key={`${issue.message}-${index}`}>{issue.message}</li>
+        ))}
+      </ul>
+      <PreviewHealthFacts report={state} />
     </section>
   );
 }

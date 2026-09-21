@@ -815,6 +815,7 @@ textarea:focus-visible {
   flex-basis: 100%;
   display: block;
   color: var(--text-soft);
+  overscroll-behavior: contain;
 }
 
 .preview-health-issues li {
@@ -922,7 +923,7 @@ textarea:focus-visible {
 
 .preview-body {
   min-height: 0;
-  flex: 1;
+  flex: 1 1 0;
 }
 
 .preview-empty {
