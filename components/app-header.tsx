@@ -55,7 +55,7 @@ export function AppHeader({
         </button>
         <a
           className="icon-button github-link"
-          href="https://github.com"
+          href="https://github.com/fhj414/forge-ai"
           target="_blank"
           rel="noreferrer"
           aria-label="Open GitHub"

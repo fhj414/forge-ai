@@ -6,7 +6,13 @@ Forge AI is a focused AI web app builder. Describe a product in natural language
 
 ## Demo
 
-The application is ready for a one-click Vercel deployment. Add the production URL here after connecting the repository and configuring the three server-side AI variables below.
+- **Live application:** [https://forge-ai.fuhaojun.com](https://forge-ai.fuhaojun.com)
+- **Source code:** [https://github.com/fhj414/forge-ai](https://github.com/fhj414/forge-ai)
+- **Challenge write-up:** [SUBMISSION.md](./SUBMISSION.md)
+
+For the fastest evaluation path, open the live application, choose an example, generate it, interact with the preview, edit a source tab, apply the change, and inspect Version History. The complete Preview Health repair path is documented in the challenge write-up.
+
+The public demo can be evaluated without signing in. `Local autosave` persists Forge projects, source, messages, metadata, and revisions in the current browser; it does not claim that temporary data created inside a generated preview survives a page refresh.
 
 ## What it does
 
@@ -94,6 +100,8 @@ The actual policy is `allow-scripts allow-forms`: form events are enabled so gen
 ### 3. Local-first persistence
 
 Projects use `forge-ai-projects`; the selected project uses `forge-ai-current-project`. The storage functions are isolated from React so a future Supabase or PostgreSQL adapter can replace localStorage without changing generation or preview logic.
+
+Generated applications have a separate state boundary. Their Storage compatibility layer is intentionally in-memory inside the isolated preview, so runtime data created by a generated app is not part of Forge's persisted project record and is not guaranteed to survive a refresh.
 
 ### 4. Provider abstraction
 
