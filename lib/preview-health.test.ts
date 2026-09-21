@@ -36,6 +36,7 @@ describe("preview health protocol", () => {
   });
 
   it("rejects malformed, overlong, negative, unknown, and inconsistent reports", () => {
+    expect(parsePreviewHealthMessage({ ...report, sessionId: " preview-session " }, report.sessionId)).toBeNull();
     expect(parsePreviewHealthMessage({ ...report, sessionId: "x".repeat(129) }, report.sessionId)).toBeNull();
     expect(parsePreviewHealthMessage({ ...report, issues: [{ ...issue, message: "x".repeat(501) }] }, report.sessionId)).toBeNull();
     expect(parsePreviewHealthMessage({ ...report, interactiveControls: -1 }, report.sessionId)).toBeNull();

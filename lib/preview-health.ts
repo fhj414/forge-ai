@@ -21,7 +21,7 @@ const reportSchema = z
   .object({
     channel: z.literal(PREVIEW_HEALTH_CHANNEL),
     version: z.literal(PREVIEW_HEALTH_VERSION),
-    sessionId: z.string().trim().min(1).max(128),
+    sessionId: z.string().min(1).max(128),
     status: z.enum(["checking", "healthy", "issues"]),
     hasMeaningfulContent: z.boolean(),
     interactiveControls: z.number().int().nonnegative().max(10_000),
