@@ -14,6 +14,14 @@ import { PromptInput } from "@/components/prompt-input";
 import { useGenerator } from "@/hooks/use-generator";
 import { useProjects } from "@/hooks/use-projects";
 import { analyzeBuild } from "@/lib/build-summary";
+import { buildPreviewRepairPrompt } from "@/lib/preview-health";
+import type { PreviewHealthReport } from "@/types/preview-health";
+
+interface GenerationIntent {
+  requestPrompt: string;
+  displayPrompt?: string;
+  revisionSource?: "refinement" | "auto_fix";
+}
 
 const EXAMPLES: ExamplePrompt[] = [
   {
@@ -39,6 +47,7 @@ const EXAMPLES: ExamplePrompt[] = [
 export function BuilderWorkspace() {
   const [prompt, setPrompt] = useState("");
   const [pendingPrompt, setPendingPrompt] = useState("");
+  const [pendingIntent, setPendingIntent] = useState<GenerationIntent | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [hasUnsavedCode, setHasUnsavedCode] = useState(false);
@@ -56,15 +65,19 @@ export function BuilderWorkspace() {
     [projectState.currentProject, projectState.persistenceState],
   );
 
-  async function submitPrompt(explicitPrompt?: string) {
-    const nextPrompt = (explicitPrompt ?? prompt).trim();
-    if (!nextPrompt || generator.isGenerating || hasUnsavedCode) return;
+  async function submitPrompt(intent: GenerationIntent) {
+    const requestPrompt = intent.requestPrompt.trim();
+    const displayPrompt = (intent.displayPrompt ?? requestPrompt).trim();
+    if (!requestPrompt || !displayPrompt || generator.isGenerating || hasUnsavedCode) {
+      return;
+    }
 
     setPrompt("");
-    setPendingPrompt(nextPrompt);
+    setPendingPrompt(displayPrompt);
+    setPendingIntent({ ...intent, requestPrompt, displayPrompt });
     const project = projectState.currentProject;
     const result = await generator.generate({
-      prompt: nextPrompt,
+      prompt: requestPrompt,
       currentCode: project
         ? {
             html: project.html,
@@ -79,9 +92,17 @@ export function BuilderWorkspace() {
     });
 
     if (result) {
-      projectState.commitGeneration(result, nextPrompt);
+      projectState.commitGeneration(result, displayPrompt, intent.revisionSource);
       setPendingPrompt("");
+      setPendingIntent(null);
     }
+  }
+
+  function repairPreview(report: PreviewHealthReport) {
+    if (report.status !== "issues" || report.issues.length === 0) return;
+
+    const repairPrompt = buildPreviewRepairPrompt(report);
+    void submitPrompt({ ...repairPrompt, revisionSource: "auto_fix" });
   }
 
   function startNewProject() {
@@ -89,6 +110,7 @@ export function BuilderWorkspace() {
     generator.reset();
     setPrompt("");
     setPendingPrompt("");
+    setPendingIntent(null);
     setHasUnsavedCode(false);
     setVersionHistoryOpen(false);
   }
@@ -98,6 +120,7 @@ export function BuilderWorkspace() {
     generator.reset();
     setPrompt("");
     setPendingPrompt("");
+    setPendingIntent(null);
     setHasUnsavedCode(false);
     setHistoryOpen(false);
     setVersionHistoryOpen(false);
@@ -123,8 +146,12 @@ export function BuilderWorkspace() {
             examples={EXAMPLES}
             disabled={generator.isGenerating || hasUnsavedCode}
             onExample={setPrompt}
-            onRetry={() => void submitPrompt(pendingPrompt)}
-            onSuggestion={(suggestion) => void submitPrompt(suggestion)}
+            onRetry={() => {
+              if (pendingIntent) void submitPrompt(pendingIntent);
+            }}
+            onSuggestion={(suggestion) =>
+              void submitPrompt({ requestPrompt: suggestion })
+            }
           />
           <div className="composer-region">
             <PromptInput
@@ -137,7 +164,7 @@ export function BuilderWorkspace() {
                   : undefined
               }
               onChange={setPrompt}
-              onSubmit={() => void submitPrompt()}
+              onSubmit={() => void submitPrompt({ requestPrompt: prompt })}
             />
             <p className="composer-disclaimer">
               AI can make mistakes. Review generated code before publishing.
@@ -152,6 +179,8 @@ export function BuilderWorkspace() {
           onApplyCode={projectState.updateCurrentProject}
           onDirtyChange={setHasUnsavedCode}
           onOpenVersionHistory={() => setVersionHistoryOpen(true)}
+          repairDisabled={generator.isGenerating || hasUnsavedCode}
+          onRepair={repairPreview}
         />
       </div>
 

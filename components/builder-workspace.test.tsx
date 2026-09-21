@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BuilderWorkspace } from "@/components/builder-workspace";
 import type { GeneratedBuild } from "@/types/ai";
+import type { PreviewHealthReport } from "@/types/preview-health";
 import type { Project } from "@/types/project";
 
 function generated(overrides: Partial<GeneratedBuild> = {}): GeneratedBuild {
@@ -277,6 +278,14 @@ describe("BuilderWorkspace", () => {
     await user.click(screen.getByRole("button", { name: /open version history/i }));
 
     const drawer = screen.getByRole("dialog", { name: /version history/i });
+    const currentVersion = within(drawer).getByRole("article", {
+      name: /current version/i,
+    });
+    expect(within(currentVersion).getByText("AI refinement")).toBeInTheDocument();
+    expect(within(currentVersion).getByText("Saved Tasks")).toBeInTheDocument();
+    expect(
+      within(currentVersion).queryByRole("button", { name: /restore/i }),
+    ).not.toBeInTheDocument();
     expect(within(drawer).getByText("Initial AI")).toBeInTheDocument();
     expect(within(drawer).getByText("Initial Tasks")).toBeInTheDocument();
     await user.click(within(drawer).getByRole("button", { name: /restore initial tasks/i }));
@@ -474,4 +483,169 @@ describe("BuilderWorkspace", () => {
       "<main><h1>AI tasks</h1></main>",
     );
   });
+
+  it("repairs the current preview with a concise audit and records an auto-fix version", async () => {
+    const user = userEvent.setup();
+    let finishRequest: ((value: Response) => void) | undefined;
+    vi.mocked(fetch).mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishRequest = resolve;
+        }),
+    );
+    localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
+    localStorage.setItem("forge-ai-current-project", restoredProject.id);
+    render(<BuilderWorkspace />);
+
+    await screen.findByText("A focused task manager.");
+    const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
+    dispatchHealthMessage(frame, issueReportFor(frame));
+    await user.click(screen.getByRole("button", { name: "Ask AI to fix" }));
+
+    expect(screen.getByText("Fix 1 detected preview runtime issue")).toBeInTheDocument();
+    expect(screen.queryByText(/chart\.js:44/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask AI to fix" })).toBeDisabled();
+    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)) as {
+      prompt: string;
+      currentCode: { html: string; css: string; javascript: string };
+    };
+    expect(request.prompt).toContain("Chart is not a constructor");
+    expect(request.currentCode).toEqual({
+      html: restoredProject.html,
+      css: restoredProject.css,
+      javascript: restoredProject.javascript,
+    });
+
+    finishRequest?.(
+      new Response(
+        JSON.stringify(
+          generated({
+            title: "Repaired Tasks",
+            summary: "The broken chart was repaired.",
+            html: "<main><h1>Repaired tasks</h1></main>",
+          }),
+        ),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    expect(await screen.findByText("The broken chart was repaired.")).toBeInTheDocument();
+    expect(screen.getByTitle("Generated app preview")).toHaveAttribute(
+      "srcdoc",
+      expect.stringContaining("<main><h1>Repaired tasks</h1></main>"),
+    );
+    await waitFor(() => {
+      const projects = JSON.parse(
+        localStorage.getItem("forge-ai-projects") ?? "[]",
+      ) as Project[];
+      expect(projects[0]?.revisionSource).toBe("auto_fix");
+      expect(projects[0]?.messages.at(-2)).toMatchObject({
+        role: "user",
+        content: "Fix 1 detected preview runtime issue",
+      });
+      expect(projects[0]?.revisions[0]).toMatchObject({
+        source: "refinement",
+        html: restoredProject.html,
+      });
+    });
+
+    await user.click(screen.getByRole("button", { name: /open version history/i }));
+    const drawer = screen.getByRole("dialog", { name: /version history/i });
+    const currentVersion = within(drawer).getByRole("article", {
+      name: /current version/i,
+    });
+    expect(within(currentVersion).getByText("AI auto-fix")).toBeInTheDocument();
+    expect(within(currentVersion).getByText("Repaired Tasks")).toBeInTheDocument();
+    expect(
+      within(currentVersion).queryByRole("button", { name: /restore/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(drawer).getByRole("button", { name: /restore saved tasks/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("disables preview repair for dirty code", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
+    localStorage.setItem("forge-ai-current-project", restoredProject.id);
+    render(<BuilderWorkspace />);
+
+    await screen.findByText("A focused task manager.");
+    const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
+    dispatchHealthMessage(frame, issueReportFor(frame));
+    expect(screen.getByRole("button", { name: "Ask AI to fix" })).toBeEnabled();
+
+    await user.click(screen.getByRole("tab", { name: /^code$/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: /html source/i }), {
+      target: { value: "<main><h1>Dirty tasks</h1></main>" },
+    });
+
+    expect(screen.getByRole("button", { name: "Ask AI to fix" })).toBeDisabled();
+  });
+
+  it("keeps the current preview and revisions unchanged when preview repair fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetch).mockImplementationOnce(() =>
+      response(
+        { error: { code: "PROVIDER_ERROR", message: "Repair provider failed." } },
+        502,
+      ),
+    );
+    localStorage.setItem("forge-ai-projects", JSON.stringify([restoredProject]));
+    localStorage.setItem("forge-ai-current-project", restoredProject.id);
+    render(<BuilderWorkspace />);
+
+    await screen.findByText("A focused task manager.");
+    const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
+    const originalSrcDoc = frame.srcdoc;
+    dispatchHealthMessage(frame, issueReportFor(frame));
+    await user.click(screen.getByRole("button", { name: "Ask AI to fix" }));
+
+    expect(await screen.findByText("Repair provider failed.")).toBeInTheDocument();
+    expect(screen.getByTitle("Generated app preview")).toHaveAttribute(
+      "srcdoc",
+      originalSrcDoc,
+    );
+    const projects = JSON.parse(
+      localStorage.getItem("forge-ai-projects") ?? "[]",
+    ) as Project[];
+    expect(projects[0]?.revisionSource).toBe(restoredProject.revisionSource);
+    expect(projects[0]?.revisions).toEqual(restoredProject.revisions);
+  });
 });
+
+function previewSessionFrom(frame: HTMLIFrameElement): string {
+  const session = frame.srcdoc.match(/"sessionId":"([^"]+)"/);
+  if (!session?.[1]) throw new Error("Expected a preview health session");
+  return session[1];
+}
+
+function issueReportFor(frame: HTMLIFrameElement): PreviewHealthReport {
+  return {
+    channel: "forge:preview-health",
+    version: 1,
+    sessionId: previewSessionFrom(frame),
+    status: "issues",
+    hasMeaningfulContent: true,
+    interactiveControls: 1,
+    forms: 0,
+    issues: [
+      {
+        message: "Chart is not a constructor",
+        source: "app.js",
+        line: 12,
+        column: 4,
+        stack: "TypeError: Chart is not a constructor at chart.js:44",
+      },
+    ],
+    reportedAt: 1_700_000_002_000,
+  };
+}
+
+function dispatchHealthMessage(frame: HTMLIFrameElement, data: unknown) {
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent("message", { data, source: frame.contentWindow }),
+    );
+  });
+}

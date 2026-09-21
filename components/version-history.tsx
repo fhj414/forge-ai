@@ -2,13 +2,15 @@
 
 import { Clock3, History, RotateCcw, X } from "lucide-react";
 
-import type { Project, ProjectRevision, RevisionSource } from "@/types/project";
+import type { AppCode } from "@/types/ai";
+import type { Project, RevisionSource } from "@/types/project";
 
 const SOURCE_LABELS: Record<RevisionSource, string> = {
   initial: "Initial AI",
   refinement: "AI refinement",
   manual: "Manual edit",
   restore: "Restore",
+  auto_fix: "AI auto-fix",
 };
 
 function formatVersionTime(timestamp: number) {
@@ -18,8 +20,8 @@ function formatVersionTime(timestamp: number) {
   }).format(timestamp);
 }
 
-function codeSize(revision: ProjectRevision) {
-  return new Blob([revision.html, revision.css, revision.javascript]).size;
+function codeSize(code: AppCode) {
+  return new Blob([code.html, code.css, code.javascript]).size;
 }
 
 export function VersionHistory({
@@ -63,6 +65,22 @@ export function VersionHistory({
         </div>
 
         <div className="history-list version-history-list">
+          {project ? (
+            <article
+              className="version-history-item"
+              aria-label="Current version"
+              data-current="true"
+            >
+              <div className="version-history-details">
+                <span className="version-source">
+                  {SOURCE_LABELS[project.revisionSource]}
+                </span>
+                <strong>{project.title}</strong>
+                <small>{formatVersionTime(project.revisionCreatedAt)}</small>
+                <small>{codeSize(project).toLocaleString()} bytes · Current</small>
+              </div>
+            </article>
+          ) : null}
           {revisions.length === 0 ? (
             <div className="history-empty">
               <Clock3 size={22} />

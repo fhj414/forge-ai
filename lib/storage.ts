@@ -22,7 +22,13 @@ const generationMetadataSchema = z.object({
   schemaValidated: z.literal(true),
 });
 
-const revisionSourceSchema = z.enum(["initial", "refinement", "manual", "restore"]);
+const revisionSourceSchema = z.enum([
+  "initial",
+  "refinement",
+  "manual",
+  "restore",
+  "auto_fix",
+]);
 
 const projectRevisionSchema = z.object({
   id: z.string(),

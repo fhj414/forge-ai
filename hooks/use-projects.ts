@@ -82,7 +82,11 @@ export function useProjects() {
   );
 
   const commitGeneration = useCallback(
-    (result: GeneratedBuild, prompt: string) => {
+    (
+      result: GeneratedBuild,
+      prompt: string,
+      source: "refinement" | "auto_fix" = "refinement",
+    ) => {
       setPersistenceState("pending");
       const now = Date.now();
       const userMessage = {
@@ -119,7 +123,7 @@ export function useProjects() {
                       userMessage,
                       assistantMessage,
                     ],
-                    revisionSource: "refinement" as const,
+                    revisionSource: source,
                     revisionCreatedAt: updatedAt,
                     revisions: addSnapshot(project),
                     updatedAt,

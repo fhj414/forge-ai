@@ -66,6 +66,25 @@ const projectWithMetadata: Project = {
   },
 };
 
+const autoFixProject = {
+  ...project,
+  revisionSource: "auto_fix",
+  revisionCreatedAt: 1_700_000_002_000,
+  revisions: [
+    {
+      id: "before-auto-fix",
+      source: "auto_fix",
+      createdAt: 1_700_000_001_000,
+      title: "Expense Orbit repair",
+      description: "A repaired personal finance dashboard.",
+      html: "<main>Repaired expenses</main>",
+      css: "body { color: navy; }",
+      javascript: "console.log('repaired');",
+      suggestions: ["Add export"],
+    },
+  ],
+} satisfies Project;
+
 describe("project storage", () => {
   it("round-trips valid projects and the active id", () => {
     const storage = new MemoryStorage();
@@ -82,6 +101,13 @@ describe("project storage", () => {
 
     expect(saveProjects([projectWithMetadata, project], storage)).toBe(true);
     expect(loadProjects(storage)).toEqual([projectWithMetadata, project]);
+  });
+
+  it("round-trips auto-fix sources for the current and historical artifact", () => {
+    const storage = new MemoryStorage();
+
+    expect(saveProjects([autoFixProject], storage)).toBe(true);
+    expect(loadProjects(storage)).toEqual([autoFixProject]);
   });
 
   it("migrates saved projects without revision history to initial revision defaults", () => {

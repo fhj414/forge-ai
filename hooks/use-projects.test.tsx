@@ -66,6 +66,25 @@ function ProjectHarness() {
       <button
         type="button"
         onClick={() =>
+          projects.commitGeneration(
+            build({
+              title: "Repaired build",
+              summary: "The preview issue was repaired.",
+              html: "<main>Repaired</main>",
+              css: "body { color: green; }",
+              javascript: "console.log('repaired');",
+              suggestions: ["Verify the chart"],
+            }),
+            "Fix detected preview issue",
+            "auto_fix",
+          )
+        }
+      >
+        Auto-fix
+      </button>
+      <button
+        type="button"
+        onClick={() =>
           projects.updateCurrentProject({
             html: "<main>Manual</main>",
             css: "body { color: olive; }",
@@ -184,6 +203,39 @@ describe("useProjects revision history", () => {
       "<main>Manual 2</main>",
       "<main>Manual 1</main>",
     ]);
+  });
+
+  it("commits an auto-fix with a concise audit message and the replaced artifact first", async () => {
+    render(<ProjectHarness />);
+    await waitForHydration();
+
+    await act(async () => {
+      screen.getByRole("button", { name: "Create" }).click();
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: "Apply eleven" }).click();
+    });
+    await waitFor(() => expect(currentProject().html).toBe("<main>Manual 11</main>"));
+    await act(async () => {
+      screen.getByRole("button", { name: "Auto-fix" }).click();
+    });
+
+    await waitFor(() => expect(currentProject().html).toBe("<main>Repaired</main>"));
+    expect(currentProject()).toMatchObject({
+      revisionSource: "auto_fix",
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          content: "Fix detected preview issue",
+        }),
+      ]),
+    });
+    expect(currentProject().revisions).toHaveLength(10);
+    expect(currentProject().revisions?.[0]).toMatchObject({
+      source: "manual",
+      title: "Initial build",
+      html: "<main>Manual 11</main>",
+    });
   });
 
   it("restores a snapshot while retaining the replaced current state", async () => {
