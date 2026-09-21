@@ -10,11 +10,13 @@ The finished surface includes responsive Preview and Code views, desktop/tablet/
 
 1. Start from an example or write a custom prompt.
 2. Follow Checking request → Sending build context → Waiting for AI response → Validating generated code → Updating preview.
-3. Use the rendered application inside the live preview.
-4. Inspect or copy its HTML, CSS, and JavaScript.
-5. Request a change or choose a suggested next step.
-6. Forge submits the current source with the new instruction and updates the same project.
-7. Refresh, start a new project, or restore an earlier project from History.
+3. Use the rendered application inside the live preview; Preview Health automatically checks rendered content, interaction-surface facts, and bounded runtime failures.
+4. When a concrete runtime issue appears, choose `Ask AI to fix` to send the current source and normalized diagnostics through the existing refinement flow.
+5. Forge snapshots the pre-repair artifact, validates the returned source, renders it, and runs a fresh health check. The new current source is labeled `AI auto-fix` in Version History.
+6. Inspect or copy its HTML, CSS, and JavaScript.
+7. Request a change or choose a suggested next step.
+8. Forge submits the current source with the new instruction and updates the same project.
+9. Refresh, start a new project, or restore an earlier project from History.
 
 ## Engineering Decisions
 
@@ -22,6 +24,9 @@ The finished surface includes responsive Preview and Code views, desktop/tablet/
 - **Constrained generation contract:** the model returns a typed HTML/CSS/JavaScript payload with changes and suggestions.
 - **Defense at the boundary:** Markdown fence cleanup, JSON extraction, Zod validation, timeout, retry, and structured error codes protect the client from provider variability.
 - **Sandboxed preview:** generated code executes with `allow-scripts` but without same-origin or outbound network access.
+- **Preview Health, not synthetic testing:** the preview automatically observes rendered content, counts controls/forms, and reports bounded uncaught errors or unhandled rejections. It does not click controls, submit forms, score visuals, audit accessibility, or verify business behavior.
+- **Explicit repair with preserved failure state:** only the user can request a repair. The request is bounded and uses the existing server route; a failed response leaves the current preview and revisions untouched, and Forge never self-retries a health report or spends model credits automatically.
+- **Unchanged isolation boundary:** Preview Health keeps the existing sandbox and CSP policy intact. Messages must come from the active iframe and match its opaque per-render session id; no parent-page data, environment values, or new outbound capability enters repair.
 - **Local-first adapter:** browser persistence is sufficient for a demo while keeping the storage boundary replaceable; quota and availability failures are surfaced in the UI.
 - **Truthful progress:** execution steps correspond to client validation, active request, response validation, and committed preview state.
 
@@ -32,7 +37,7 @@ I deliberately did not build a WebContainer, npm runtime, or full React project 
 Instead, I prioritized the complete product loop:
 
 ```text
-AI generation → execution state → validation → preview → persistence → iterative editing
+Generate → Validate → Preview → Check → Repair → Re-check
 ```
 
 This produces a more convincing AI-native product than a larger feature list with an unreliable core path.
@@ -44,6 +49,7 @@ This produces a more convincing AI-native product than a larger feature list wit
 - The provider response is not streamed.
 - The generated application cannot install dependencies or access the host application.
 - A production deployment still needs provider credentials configured by the deployer.
+- Preview Health is intentionally a runtime/render signal, not a substitute for interaction, visual, accessibility, or business-logic testing.
 
 ## What I would build next
 

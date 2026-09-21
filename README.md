@@ -11,25 +11,28 @@ The application is ready for a one-click Vercel deployment. Add the production U
 ## What it does
 
 ```text
-Prompt → Agent execution → Validated code → Sandboxed preview → Local project → Refine
+Generate → Validate → Preview → Check → Repair → Re-check
 ```
 
 1. A user describes an app or selects a starting example.
 2. Forge sends the request to OpenRouter through a server-only API route.
 3. A real request-linked execution timeline communicates progress.
 4. The response is cleaned, parsed, and validated before it reaches the UI.
-5. HTML, CSS, and JavaScript render in an isolated live preview.
-6. Users can edit any generated source file, apply it to the preview, or discard the draft.
-7. Follow-up prompts include the current source so the model edits instead of restarting.
-8. Projects, source, suggestions, and conversation history persist in the browser.
-9. Every generated build records trusted model, timing, source-size, and validation metadata.
-10. The Preview toolbar downloads the active project as a standalone runnable HTML application, not a full project backup.
+5. HTML, CSS, and JavaScript render in an isolated live preview, which automatically reports render facts and bounded runtime failures.
+6. When Preview Health reports a concrete issue, the user can explicitly choose `Ask AI to fix`; repairs are never automatic.
+7. Users can edit any generated source file, apply it to the preview, or discard the draft.
+8. Follow-up prompts include the current source so the model edits instead of restarting.
+9. Projects, source, suggestions, and conversation history persist in the browser.
+10. Every generated build records trusted model, timing, source-size, and validation metadata.
+11. The Preview toolbar downloads the active project as a standalone runnable HTML application, not a full project backup.
 
 ## Features
 
 - Provider-neutral AI generation through `AI_API_BASE` and `AI_MODEL`
 - Real Agent execution timeline instead of a generic spinner
 - Sandboxed live preview with desktop, tablet, and mobile viewports
+- Automatic Preview Health checks for rendered content, control/form counts, uncaught errors, and unhandled promise rejections
+- Explicit one-click AI repair using bounded diagnostics; no automatic repair loop or automatic model spend
 - Built-in form and native canvas chart compatibility for generated apps
 - Editable HTML, CSS, and JavaScript with Apply, Discard, copy, dirty state, and `Cmd/Ctrl + S`
 - Iterative editing that sends the current source back to the model
@@ -62,6 +65,9 @@ flowchart LR
   LLM --> Parser[Defensive JSON parser]
   Parser --> ProjectStore[Project state]
   ProjectStore --> Preview[Sandboxed iframe]
+  Preview --> Health[Preview Health check]
+  Health --> Repair[Explicit AI repair]
+  Repair --> Preview
   ProjectStore --> LocalStorage[(localStorage)]
 ```
 
@@ -97,7 +103,15 @@ The backend uses OpenRouter's standard chat-completions HTTP contract instead of
 
 Network and model errors are represented as recoverable UI state. A failed refinement does not clear or mutate the current project; Retry resubmits the same prompt against the same source.
 
-### 6. Delivery confidence
+### 6. Preview Health and explicit AI repair
+
+Each active preview runs a non-invasive health check after it renders. It reports whether meaningful content rendered, counts controls and forms, and captures bounded uncaught JavaScript errors and unhandled promise rejections from the sandboxed preview. It does not click controls, submit forms, judge visual quality, inspect application state, or verify business logic.
+
+Repair is always an explicit `Ask AI to fix` action, enabled only when a concrete issue is present. The existing generation path receives the current source plus normalized, size-bounded diagnostics. Forge does not retry a repair from a health result, so there is no automatic spend or repair loop. A failed provider, network, timeout, or schema response preserves the current preview and its revision history.
+
+Before a successful repair replaces source, the current artifact is snapshotted. Version History exposes that prior artifact and labels the new current source as `AI auto-fix`; the fresh preview then runs another health check.
+
+### 7. Delivery confidence
 
 Each successful build stores the configured model, measured request duration, source line and byte counts, and a
 `schemaValidated: true` marker. The active project keeps the ten most recent prior revisions, including manual edits
@@ -106,6 +120,10 @@ full project backup; it reuses the exact document composer
 used by the sandboxed preview, so forms, browser storage compatibility, native Chart-style rendering, and CSP remain
 available in the one-file export. API keys and server-only environment variables never enter projects, revisions, or
 downloads.
+
+Preview Health does not weaken the boundary: generated source still runs in an iframe with
+`sandbox="allow-scripts allow-forms"`, without `allow-same-origin`. The existing restrictive CSP is unchanged;
+diagnostic messages are accepted only from the active iframe and require its per-render opaque session identifier.
 
 ## Local development
 
