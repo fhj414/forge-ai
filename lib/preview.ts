@@ -1,12 +1,24 @@
 import type { AppCode } from "@/types/ai";
 
+import { createPreviewHealthRuntime } from "./preview-health-runtime";
+
+export interface PreviewDocumentOptions {
+  diagnosticSessionId?: string;
+}
+
 function neutralizeClosingTag(source: string, tag: "script" | "style") {
   return source.replace(new RegExp(`</${tag}`, "gi"), `<\\/${tag}`);
 }
 
-export function composePreviewDocument(code: AppCode): string {
+export function composePreviewDocument(
+  code: AppCode,
+  options?: PreviewDocumentOptions,
+): string {
   const safeCss = neutralizeClosingTag(code.css, "style");
   const safeJavaScript = neutralizeClosingTag(code.javascript, "script");
+  const healthRuntime = options?.diagnosticSessionId
+    ? `<script>\n      ${createPreviewHealthRuntime(options.diagnosticSessionId)}\n    </script>`
+    : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -216,6 +228,7 @@ export function composePreviewDocument(code: AppCode): string {
       }, true);
       })();
     </script>
+    ${healthRuntime}
     ${code.html}
     <script>
       ${safeJavaScript}

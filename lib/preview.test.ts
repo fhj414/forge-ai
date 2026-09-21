@@ -48,6 +48,32 @@ describe("composePreviewDocument", () => {
     expect(document).toContain("<\\/script><img");
   });
 
+  it("injects opt-in health reporting before generated application markup", () => {
+    const document = composePreviewDocument(
+      {
+        html: '<main id="app">Ready</main>',
+        css: "",
+        javascript: "window.appReady = true;",
+      },
+      { diagnosticSessionId: "health-1" },
+    );
+
+    expect(document).toContain("forge:preview-health");
+    expect(document.indexOf("forge:preview-health")).toBeLessThan(
+      document.indexOf('<main id="app">Ready</main>'),
+    );
+  });
+
+  it("omits parent health reporting from standalone preview documents", () => {
+    const document = composePreviewDocument({
+      html: "<main>Ready</main>",
+      css: "",
+      javascript: "",
+    });
+
+    expect(document).not.toContain("forge:preview-health");
+  });
+
   it("blocks generated applications from sending data to external origins", () => {
     const document = composePreviewDocument({
       html: '<form action="https://attacker.example"><input name="secret"></form>',
