@@ -87,6 +87,49 @@ describe("generateApplication", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a transient retry inside one total deadline", async () => {
+    vi.useFakeTimers();
+    let retrySignal: AbortSignal | null = null;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            setTimeout(() => resolve(new Response("busy", { status: 503 })), 100);
+          }),
+      )
+      .mockImplementationOnce(
+        (_url, init) => {
+          retrySignal = init?.signal ?? null;
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Request aborted", "AbortError")),
+              { once: true },
+            );
+          });
+        },
+      );
+
+    try {
+      const result = generateApplication(request, config, fetcher);
+      const rejection = expect(result).rejects.toMatchObject({
+        code: "AI_TIMEOUT",
+      });
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(config.timeoutMs - 101);
+      expect(retrySignal).not.toBeNull();
+      expect((retrySignal as AbortSignal | null)?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect((retrySignal as AbortSignal | null)?.aborted).toBe(true);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects malformed model output", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
