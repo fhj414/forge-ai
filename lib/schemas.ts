@@ -17,7 +17,10 @@ const generatedAppSchema = z.object({
   css: z.string().max(CSS_MAX_LENGTH),
   javascript: z.string().max(JAVASCRIPT_MAX_LENGTH),
   changes: z.array(z.string().trim().min(1)).default([]),
-  suggestions: z.array(z.string().trim().min(1)).max(4).default([]),
+  suggestions: z.preprocess(
+    (value) => (Array.isArray(value) ? value.slice(0, 4) : value),
+    z.array(z.string().trim().min(1)).max(4).default([]),
+  ),
 });
 
 const generationMetadataSchema = z.object({

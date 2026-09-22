@@ -23,6 +23,9 @@ interface GenerationIntent {
   revisionSource?: "refinement" | "auto_fix";
 }
 
+const DEFAULT_PROMPT =
+  "Build a minimal task manager with filters, priority levels and progress statistics.";
+
 const EXAMPLES: ExamplePrompt[] = [
   {
     label: "SaaS Dashboard",
@@ -33,8 +36,7 @@ const EXAMPLES: ExamplePrompt[] = [
   {
     label: "Task Manager",
     eyebrow: "Productivity",
-    prompt:
-      "Build a minimal task manager with filters, priority levels and progress statistics.",
+    prompt: DEFAULT_PROMPT,
   },
   {
     label: "Expense Tracker",
@@ -45,7 +47,8 @@ const EXAMPLES: ExamplePrompt[] = [
 ];
 
 export function BuilderWorkspace() {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
+  const [promptIsPreset, setPromptIsPreset] = useState(true);
   const [pendingPrompt, setPendingPrompt] = useState("");
   const [pendingIntent, setPendingIntent] = useState<GenerationIntent | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -53,6 +56,10 @@ export function BuilderWorkspace() {
   const [hasUnsavedCode, setHasUnsavedCode] = useState(false);
   const projectState = useProjects();
   const generator = useGenerator();
+  const composerPrompt =
+    !projectState.hydrated || (projectState.currentProject && promptIsPreset)
+      ? ""
+      : prompt;
 
   const buildSummary = useMemo(
     () =>
@@ -68,11 +75,18 @@ export function BuilderWorkspace() {
   async function submitPrompt(intent: GenerationIntent) {
     const requestPrompt = intent.requestPrompt.trim();
     const displayPrompt = (intent.displayPrompt ?? requestPrompt).trim();
-    if (!requestPrompt || !displayPrompt || generator.isGenerating || hasUnsavedCode) {
+    if (
+      !projectState.hydrated ||
+      !requestPrompt ||
+      !displayPrompt ||
+      generator.isGenerating ||
+      hasUnsavedCode
+    ) {
       return;
     }
 
     setPrompt("");
+    setPromptIsPreset(false);
     setPendingPrompt(displayPrompt);
     setPendingIntent({ ...intent, requestPrompt, displayPrompt });
     const project = projectState.currentProject;
@@ -95,6 +109,8 @@ export function BuilderWorkspace() {
       projectState.commitGeneration(result, displayPrompt, intent.revisionSource);
       setPendingPrompt("");
       setPendingIntent(null);
+    } else {
+      setPrompt(displayPrompt);
     }
   }
 
@@ -108,7 +124,8 @@ export function BuilderWorkspace() {
   function startNewProject() {
     projectState.newProject();
     generator.reset();
-    setPrompt("");
+    setPrompt(DEFAULT_PROMPT);
+    setPromptIsPreset(true);
     setPendingPrompt("");
     setPendingIntent(null);
     setHasUnsavedCode(false);
@@ -119,6 +136,7 @@ export function BuilderWorkspace() {
     projectState.restoreProject(id);
     generator.reset();
     setPrompt("");
+    setPromptIsPreset(false);
     setPendingPrompt("");
     setPendingIntent(null);
     setHasUnsavedCode(false);
@@ -126,11 +144,28 @@ export function BuilderWorkspace() {
     setVersionHistoryOpen(false);
   }
 
+  function deleteProject(id: string) {
+    const deletingCurrentProject = projectState.currentProject?.id === id;
+    projectState.deleteProject(id);
+
+    if (!deletingCurrentProject) return;
+
+    generator.reset();
+    setPrompt(DEFAULT_PROMPT);
+    setPromptIsPreset(true);
+    setPendingPrompt("");
+    setPendingIntent(null);
+    setHasUnsavedCode(false);
+    setVersionHistoryOpen(false);
+  }
+
   return (
     <main className="app-shell">
       <AppHeader
         projectTitle={projectState.currentProject?.title}
-        disabled={generator.isGenerating || hasUnsavedCode}
+        disabled={
+          !projectState.hydrated || generator.isGenerating || hasUnsavedCode
+        }
         onNewProject={startNewProject}
         onOpenHistory={() => setHistoryOpen(true)}
       />
@@ -144,8 +179,13 @@ export function BuilderWorkspace() {
             errorMessage={generator.error?.message}
             buildSummary={buildSummary}
             examples={EXAMPLES}
-            disabled={generator.isGenerating || hasUnsavedCode}
-            onExample={setPrompt}
+            disabled={
+              !projectState.hydrated || generator.isGenerating || hasUnsavedCode
+            }
+            onExample={(examplePrompt) => {
+              setPrompt(examplePrompt);
+              setPromptIsPreset(false);
+            }}
             onRetry={() => {
               if (pendingIntent) void submitPrompt(pendingIntent);
             }}
@@ -155,16 +195,21 @@ export function BuilderWorkspace() {
           />
           <div className="composer-region">
             <PromptInput
-              value={prompt}
+              value={composerPrompt}
               isRefinement={Boolean(projectState.currentProject)}
-              disabled={generator.isGenerating}
+              disabled={!projectState.hydrated || generator.isGenerating}
               blockedReason={
                 hasUnsavedCode
                   ? "Apply or discard code changes before refining."
                   : undefined
               }
-              onChange={setPrompt}
-              onSubmit={() => void submitPrompt({ requestPrompt: prompt })}
+              onChange={(value) => {
+                setPrompt(value);
+                setPromptIsPreset(false);
+              }}
+              onSubmit={() =>
+                void submitPrompt({ requestPrompt: composerPrompt })
+              }
             />
             <p className="composer-disclaimer">
               AI can make mistakes. Review generated code before publishing.
@@ -190,7 +235,7 @@ export function BuilderWorkspace() {
         currentProjectId={projectState.currentProject?.id}
         onClose={() => setHistoryOpen(false)}
         onOpen={openProject}
-        onDelete={projectState.deleteProject}
+        onDelete={deleteProject}
       />
       <VersionHistory
         open={versionHistoryOpen}

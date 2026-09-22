@@ -43,6 +43,58 @@ describe("parseGeneratedApp", () => {
     ]);
   });
 
+  it("caps extra model suggestions instead of rejecting a valid app", () => {
+    const raw = JSON.stringify({
+      title: "Focus",
+      summary: "A task app",
+      html: "<main>Tasks</main>",
+      css: "body{}",
+      javascript: "",
+      changes: ["Task filters"],
+      suggestions: [
+        "Add keyboard shortcuts",
+        "Add due dates",
+        "Add recurring tasks",
+        "Add team sharing",
+        "Add calendar sync",
+        "Add time tracking",
+      ],
+    });
+
+    expect(parseGeneratedApp(raw).suggestions).toEqual([
+      "Add keyboard shortcuts",
+      "Add due dates",
+      "Add recurring tasks",
+      "Add team sharing",
+    ]);
+  });
+
+  it("ignores malformed suggestions beyond the four visible items", () => {
+    const raw = JSON.stringify({
+      title: "Focus",
+      summary: "A task app",
+      html: "<main>Tasks</main>",
+      css: "body{}",
+      javascript: "",
+      changes: [],
+      suggestions: [
+        "Add keyboard shortcuts",
+        "Add due dates",
+        "Add recurring tasks",
+        "Add team sharing",
+        "",
+        null,
+      ],
+    });
+
+    expect(parseGeneratedApp(raw).suggestions).toEqual([
+      "Add keyboard shortcuts",
+      "Add due dates",
+      "Add recurring tasks",
+      "Add team sharing",
+    ]);
+  });
+
   it("rejects responses without required source fields", () => {
     expect(() =>
       parseGeneratedApp('{"title":"Broken","summary":"No source"}'),

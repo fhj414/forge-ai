@@ -150,7 +150,7 @@ Configure OpenRouter in `.env.local` (the default model favors fast code generat
 ```env
 AI_API_KEY=your_api_key_here
 AI_API_BASE=https://openrouter.ai/api/v1
-AI_MODEL=qwen/qwen3.5-35b-a3b:nitro
+AI_MODEL=qwen/qwen3.5-9b:nitro
 ```
 
 When any required value is missing, the UI shows `AI service is not configured.` and offers Retry; it does not expose a server stack trace.
@@ -167,8 +167,9 @@ npm run build
 
 1. Import this repository into Vercel.
 2. Keep the detected framework preset as Next.js.
-3. Add `AI_API_KEY`, `AI_API_BASE`, and `AI_MODEL` in Project Settings → Environment Variables.
-4. Deploy. The App Router API route runs as a serverless function; no separate backend service is required.
+3. Add `AI_API_KEY` and, if needed, `AI_API_BASE` in Project Settings → Environment Variables.
+4. The public demo model is pinned in `vercel.json`; edit `AI_MODEL` there to change it for a deployment.
+5. Deploy. The App Router API route runs as a serverless function; no separate backend service is required.
 
 ## Project structure
 

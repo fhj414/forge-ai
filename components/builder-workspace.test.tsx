@@ -16,6 +16,15 @@ import type { GeneratedBuild } from "@/types/ai";
 import type { PreviewHealthReport } from "@/types/preview-health";
 import type { Project } from "@/types/project";
 
+const DEFAULT_PROMPT =
+  "Build a minimal task manager with filters, priority levels and progress statistics.";
+
+async function waitForFreshComposer() {
+  const composer = screen.getByRole("textbox", { name: /describe your app/i });
+  await waitFor(() => expect(composer).toHaveValue(DEFAULT_PROMPT));
+  return composer;
+}
+
 function generated(overrides: Partial<GeneratedBuild> = {}): GeneratedBuild {
   return {
     title: "Expense Atlas",
@@ -99,10 +108,24 @@ describe("BuilderWorkspace", () => {
     vi.restoreAllMocks();
   });
 
+  it("shows a runnable example after project hydration", async () => {
+    render(<BuilderWorkspace />);
+
+    const composer = screen.getByRole("textbox", { name: /describe your app/i });
+    expect(composer).toHaveValue("");
+    expect(screen.getByRole("button", { name: /^generate app$/i })).toBeDisabled();
+
+    await waitFor(() =>
+      expect(composer).toHaveValue(DEFAULT_PROMPT),
+    );
+    expect(screen.getByRole("button", { name: /^generate app$/i })).toBeEnabled();
+  });
+
   it("fills the composer from an example prompt", async () => {
     const user = userEvent.setup();
     render(<BuilderWorkspace />);
 
+    await waitForFreshComposer();
     expect(screen.getByText("Build something with AI")).toBeInTheDocument();
     await user.click(
       screen.getByRole("button", { name: /use saas dashboard example/i }),
@@ -129,7 +152,8 @@ describe("BuilderWorkspace", () => {
       );
     render(<BuilderWorkspace />);
 
-    const composer = screen.getByRole("textbox", { name: /describe your app/i });
+    const composer = await waitForFreshComposer();
+    await user.clear(composer);
     await user.type(composer, "Create a personal expense tracker");
     await user.click(screen.getByRole("button", { name: /^generate app$/i }));
 
@@ -169,7 +193,7 @@ describe("BuilderWorkspace", () => {
     });
   });
 
-  it("keeps the workspace stable on errors and retries the same prompt", async () => {
+  it("restores the prompt after a timeout and retries the same request", async () => {
     const user = userEvent.setup();
     const fetcher = vi.mocked(fetch);
     fetcher
@@ -177,27 +201,34 @@ describe("BuilderWorkspace", () => {
         response(
           {
             error: {
-              code: "AI_NOT_CONFIGURED",
-              message: "AI service is not configured.",
+              code: "AI_TIMEOUT",
+              message: "The AI request timed out.",
             },
           },
-          503,
+          504,
         ),
       )
       .mockImplementationOnce(() => response(generated()));
     render(<BuilderWorkspace />);
 
+    const composer = await waitForFreshComposer();
+    await user.clear(composer);
     await user.type(
-      screen.getByRole("textbox", { name: /describe your app/i }),
+      composer,
       "Build an expense tracker",
     );
     await user.click(screen.getByRole("button", { name: /^generate app$/i }));
 
-    expect(await screen.findByText("AI service is not configured.")).toBeInTheDocument();
+    expect(await screen.findByText("The AI request timed out.")).toBeInTheDocument();
+    expect(composer).toHaveValue("Build an expense tracker");
+    expect(screen.getByRole("button", { name: /^generate app$/i })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: /retry generation/i }));
 
     expect(await screen.findByText("Build completed")).toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1]?.[1]?.body).toBe(
+      fetcher.mock.calls[0]?.[1]?.body,
+    );
   });
 
   it("locks project navigation while a build request is active", async () => {
@@ -211,8 +242,10 @@ describe("BuilderWorkspace", () => {
     );
     render(<BuilderWorkspace />);
 
+    const composer = await waitForFreshComposer();
+    await user.clear(composer);
     await user.type(
-      screen.getByRole("textbox", { name: /describe your app/i }),
+      composer,
       "Build a task manager",
     );
     await user.click(screen.getByRole("button", { name: /^generate app$/i }));
@@ -239,8 +272,10 @@ describe("BuilderWorkspace", () => {
     vi.mocked(fetch).mockImplementationOnce(() => response(generated()));
     render(<BuilderWorkspace />);
 
+    const composer = await waitForFreshComposer();
+    await user.clear(composer);
     await user.type(
-      screen.getByRole("textbox", { name: /describe your app/i }),
+      composer,
       "Build an expense tracker",
     );
     await user.click(screen.getByRole("button", { name: /^generate app$/i }));
@@ -256,7 +291,15 @@ describe("BuilderWorkspace", () => {
     localStorage.setItem("forge-ai-current-project", restoredProject.id);
     render(<BuilderWorkspace />);
 
+    const exampleButton = screen.getByRole("button", {
+      name: /use saas dashboard example/i,
+    });
+    expect(exampleButton).toBeDisabled();
+    await user.click(exampleButton);
     expect(await screen.findByText("A focused task manager.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /describe your app/i })).toHaveValue(
+      "",
+    );
     await user.click(screen.getByRole("button", { name: /new project/i }));
     expect(screen.getByText("Build something with AI")).toBeInTheDocument();
 
@@ -330,6 +373,10 @@ describe("BuilderWorkspace", () => {
     await waitFor(() =>
       expect(within(drawer).queryByText("Saved Tasks")).not.toBeInTheDocument(),
     );
+    expect(screen.getByRole("textbox", { name: /describe your app/i })).toHaveValue(
+      DEFAULT_PROMPT,
+    );
+    expect(screen.getByRole("button", { name: /^generate app$/i })).toBeEnabled();
   });
 
   it("discards draft code, applies the next edit, and persists it", async () => {

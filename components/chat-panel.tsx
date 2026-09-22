@@ -36,8 +36,9 @@ interface ChatPanelProps {
 
 function EmptyConversation({
   examples,
+  disabled,
   onExample,
-}: Pick<ChatPanelProps, "examples" | "onExample">) {
+}: Pick<ChatPanelProps, "examples" | "disabled" | "onExample">) {
   return (
     <div className="welcome-state">
       <div className="welcome-kicker">
@@ -50,6 +51,7 @@ function EmptyConversation({
           <button
             key={example.label}
             type="button"
+            disabled={disabled}
             onClick={() => onExample(example.prompt)}
             aria-label={`Use ${example.label} example`}
           >
@@ -138,7 +140,11 @@ export function ChatPanel({
   return (
     <div className="conversation-scroll">
       {!project && !pendingPrompt ? (
-        <EmptyConversation examples={examples} onExample={onExample} />
+        <EmptyConversation
+          examples={examples}
+          disabled={disabled}
+          onExample={onExample}
+        />
       ) : (
         <div className="conversation">
           <div className="conversation-heading">

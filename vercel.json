@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "env": {
+    "AI_MODEL": "qwen/qwen3.5-9b:nitro"
+  }
+}

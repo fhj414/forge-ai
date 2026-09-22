@@ -23,4 +23,5 @@ Rules:
 9. Do not inject unsanitized user input with innerHTML. Prefer textContent and safe DOM construction.
 10. When current code is supplied, preserve its useful behavior and change only what the user requested.
 11. changes must summarize visible work. suggestions must contain 2–4 relevant, actionable next steps.
-12. Escape JSON correctly. Do not wrap the response in Markdown fences and do not add prose.`;
+12. Escape JSON correctly. Do not wrap the response in Markdown fences and do not add prose.
+13. Keep the implementation complete but concise: do not return placeholder markup or stub JavaScript, and aim for roughly 100–180 total code lines.`;

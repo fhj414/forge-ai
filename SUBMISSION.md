@@ -5,9 +5,9 @@
 - **在线 Demo：** [https://forge-ai.fuhaojun.com](https://forge-ai.fuhaojun.com)
 - **GitHub：** [https://github.com/fhj414/forge-ai](https://github.com/fhj414/forge-ai)
 - **访问方式：** 公网匿名访问，无需注册或登录
-- **默认模型：** `qwen/qwen3.5-35b-a3b:nitro`（通过 OpenRouter 调用）
+- **默认模型：** `qwen/qwen3.5-9b:nitro`（通过 OpenRouter 调用，优先低延迟生成）
 - **技术栈：** Next.js App Router、React、TypeScript、Zod、Vitest、Testing Library；部署于 Vercel
-- **最近验收：** 2026-09-21，Node.js `v22.23.2`
+- **最近验收：** 2026-09-22，Node.js `v22.23.2`
 
 Forge AI 是一个端到端的 AI Web App Builder。用户可以用自然语言描述产品，观察真实生成过程，在隔离的 Preview 中运行生成结果，继续对话修改代码，并在发现运行时错误后显式请求 AI 修复。
 
@@ -85,7 +85,7 @@ Preview 不启用 `allow-same-origin`，并通过 CSP 禁止网络连接、外�
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| 初始化与使用入口 | 已完成 | 公网匿名访问，示例可一键填入，无需注册 |
+| 初始化与使用入口 | 已完成 | 公网匿名访问，新工作区预填可直接生成的 Task Manager 示例，无需注册 |
 | 自然语言生成应用 | 已完成 | 支持示例和自定义 Prompt |
 | 请求关联的执行时间线 | 已完成 | 阶段与请求、校验和 Preview 更新对应，并非虚构进度条 |
 | 可交互 Preview | 已完成 | 表单、按钮、筛选和 Canvas 图表可运行 |
@@ -124,17 +124,17 @@ WebContainer 或 Sandpack 可以提供更接近真实工程的多文件体验，
 
 ## 工程质量与验证
 
-以下结果于 2026-09-21 使用 Node.js `v22.23.2` 重新执行：
+以下结果于 2026-09-22 使用 Node.js `v22.23.2` 重新执行：
 
 | 检查 | 命令或路径 | 结果 |
 | --- | --- | --- |
-| 自动化测试 | `npm test` | 17 个测试文件、91 个测试全部通过 |
+| 自动化测试 | `npm test` | 17 个测试文件、94 个测试全部通过 |
 | 静态检查 | `npm run lint` | 通过，无 ESLint 错误 |
 | 生产构建 | `npm run build` | Next.js 编译、TypeScript 检查和静态页面生成通过 |
 | Diff 格式 | `git diff --check` | 通过 |
 | 线上冒烟测试 | 在线 Demo 的 `Task Manager` 示例 | 匿名生成成功，Schema validated，Preview healthy |
 
-线上实测的一次生成耗时约 24,990 ms，模型为 `qwen/qwen3.5-35b-a3b:nitro`；该数字仅是本次验收样本，不代表平均延迟或可用性 SLA。生成的任务应用可新增、完成、筛选和删除任务；刷新后 Forge 项目及源码仍在，而 Preview 内临时新增的任务会重置，与上文描述的状态边界一致。
+本轮将默认模型调整为 `qwen/qwen3.5-9b:nitro`。同一 Task Manager Prompt 的受控样本通常在约 20–27 秒内返回；模型服务仍可能出现长尾延迟，因此该区间不代表平均延迟或可用性 SLA。生成失败或 504 后，Forge 会恢复原 Prompt，并同时保留 Retry 与最后一个有效版本，用户可以立即重试或修改请求。生成的任务应用可新增、完成、筛选和删除任务；刷新后 Forge 项目及源码仍在，而 Preview 内临时新增的任务会重置，与上文描述的状态边界一致。
 
 自动化测试覆盖 API 请求、Schema、持久化、版本恢复、代码编辑、导出、Preview Health 和显式 AI 修复。线上耗时和生成质量会随模型服务状态及 Prompt 变化，`Preview healthy` 也只代表当前渲染与有限运行时检查通过，不等于完整业务、视觉或无障碍验收。
 

@@ -57,6 +57,9 @@ describe("generateApplication", () => {
       messages: { role: string; content: string }[];
     };
     expect(body.model).toBe("forge-test");
+    expect(body.messages[0]?.content).toContain(
+      "Keep the implementation complete but concise",
+    );
     expect(body.messages.at(-1)?.content).toContain("<main>Ledger</main>");
     expect(body.messages.at(-1)?.content).toContain(request.prompt);
   });
