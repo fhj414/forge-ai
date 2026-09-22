@@ -132,7 +132,7 @@ WebContainer 或 Sandpack 可以提供更接近真实工程的多文件体验，
 | 静态检查 | `npm run lint` | 通过，无 ESLint 错误 |
 | 生产构建 | `npm run build` | Next.js 编译、TypeScript 检查和静态页面生成通过 |
 | Diff 格式 | `git diff --check` | 通过 |
-| 线上冒烟测试 | 在线 Demo 的 `Task Manager` 示例 | 匿名生成成功，Schema validated，Preview healthy |
+| 线上部署验收 | 自定义域名与 API 输入边界 | Vercel 部署成功；首页 HTTP 200；空 Prompt 返回结构化 HTTP 400 |
 
 本轮将默认模型调整为 `qwen/qwen3.5-9b:nitro`。同一 Task Manager Prompt 的受控样本通常在约 20–27 秒内返回；模型服务仍可能出现长尾延迟，因此该区间不代表平均延迟或可用性 SLA。生成失败或 504 后，Forge 会恢复原 Prompt，并同时保留 Retry 与最后一个有效版本，用户可以立即重试或修改请求。生成的任务应用可新增、完成、筛选和删除任务；刷新后 Forge 项目及源码仍在，而 Preview 内临时新增的任务会重置，与上文描述的状态边界一致。
 
