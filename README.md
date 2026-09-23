@@ -17,14 +17,14 @@ The public demo can be evaluated without signing in. `Local autosave` persists F
 ## What it does
 
 ```text
-Generate → Validate → Preview → Check → Repair → Re-check
+Generate → Validate → Quality gate → Preview → Check → Repair → Re-check
 ```
 
 1. A user describes an app or selects a starting example.
 2. Forge sends the request to OpenRouter through a server-only API route.
 3. A real request-linked execution timeline communicates progress.
-4. The response is cleaned, parsed, and validated before it reaches the UI.
-5. HTML, CSS, and JavaScript render in an isolated live preview, which automatically reports render facts and bounded runtime failures.
+4. The response is cleaned, parsed, schema-validated, and passed through a deterministic artifact-quality gate before it reaches the UI. Invalid output gets at most one bounded corrective attempt under the same request deadline.
+5. HTML, CSS, and JavaScript render in an isolated live preview, which automatically reports render facts, bounded runtime failures, and bounded listener-wiring evidence.
 6. When Preview Health reports a concrete issue, the user can explicitly choose `Ask AI to fix`; repairs are never automatic.
 7. Users can edit any generated source file, apply it to the preview, or discard the draft.
 8. Follow-up prompts include the current source so the model edits instead of restarting.
@@ -45,6 +45,7 @@ Generate → Validate → Preview → Check → Repair → Re-check
 - Local-first project persistence and history restore/delete
 - Capped version history with one-click restore and revision source labels
 - Trusted generation metadata for model, duration, source size, and schema validation
+- Deterministic generated-artifact quality gate with one bounded corrective retry for invalid model output
 - Standalone runnable `Download HTML` export with embedded preview compatibility runtime (not a restorable project backup)
 - Visible persistence failure feedback when browser storage is unavailable
 - Suggested improvements that become one-click refinement prompts
@@ -77,7 +78,7 @@ flowchart LR
   ProjectStore --> LocalStorage[(localStorage)]
 ```
 
-The client never receives the AI key. `/api/generate` adds the dedicated system prompt, applies one shared 55-second request budget, retries one transient provider or network failure only within that budget, strips Markdown fences, extracts JSON, and validates every field before returning a result. A timeout is returned immediately instead of starting another full model request.
+The client never receives the AI key. `/api/generate` adds the dedicated system prompt, applies one shared 55-second request budget, strips Markdown fences, extracts JSON, validates every field, and applies a deterministic artifact-quality gate before returning a result. The gate rejects document/script/style wrappers and inline HTML handlers; requires syntactically valid JavaScript plus `addEventListener` wiring for actionable markup; and rejects browser network APIs, module imports, and `document.write`. Parse, schema, or quality failures receive at most one compact corrective model attempt; transient provider or network failures likewise receive at most one retry. All attempts share the same deadline, and a timeout is returned immediately instead of starting another full model request.
 
 ## Key engineering decisions
 
@@ -113,7 +114,7 @@ Network and model errors are represented as recoverable UI state. A failed refin
 
 ### 6. Preview Health and explicit AI repair
 
-Each active preview runs a non-invasive health check after it renders. It reports whether meaningful content rendered, counts controls and forms, and captures bounded uncaught JavaScript errors and unhandled promise rejections from the sandboxed preview. It does not click controls, submit forms, judge visual quality, inspect application state, or verify business logic.
+Each active preview runs a non-invasive health check after it renders. It reports whether meaningful content rendered, counts controls and forms, captures bounded uncaught JavaScript errors and unhandled promise rejections, and observes generated-code listener registration without invoking user actions. Its interaction result is deliberately bounded: `complete` means every detected advertised action/form has direct listener wiring; `incomplete` means direct wiring is missing and no delegation signal was observed; `unknown` means delegated or indirect wiring requires manual verification; and `none` means no advertised app actions were detected. It does not click controls, submit forms, judge visual quality, inspect application state, or verify business logic. Listener wiring is evidence of registration, not proof that arbitrary business behavior is correct.
 
 Repair is always an explicit `Ask AI to fix` action, enabled only when a concrete issue is present. The existing generation path receives the current source plus normalized, size-bounded diagnostics. Forge does not retry a repair from a health result, so there is no automatic spend or repair loop. A failed provider, network, timeout, or schema response preserves the current preview and its revision history.
 
@@ -163,6 +164,8 @@ npm run lint
 npm run build
 ```
 
+The 2026-09-23 delivery verification passed 123 tests across 18 test files, TypeScript checking, lint, and the production build. Browser QA against the production build confirmed a directly wired fixture (`Runtime check passed`, `1/1 detected`) and that its control changed the preview; an inert fixture reported `0/1 detected` with a concrete repairable issue; and delegated wiring reported `Manual verification needed` without offering repair. These checks are bounded evidence, not a claim that generated application business semantics are proven.
+
 ## Deploy to Vercel
 
 1. Import this repository into Vercel.
@@ -190,13 +193,16 @@ types/                       Shared strict TypeScript models
 - Generation is request/response rather than token streaming.
 - There is no visual editor or generated-app deployment flow.
 - Preview applications cannot install packages or call arbitrary external APIs.
+- Model-provider latency and timeouts remain external limitations; a timed-out provider request produces no successful preview and must be retried by the user.
 
 ## Future work
 
 ### P0
 
 - Streaming generation and step events
-- Stronger static validation for generated JavaScript and unsafe HTML
+- Provider telemetry for latency, timeout, and failure reasons
+- Model outcome comparison for quality-gate and preview-check results
+- Declarative preview smoke checks for repeatable expected behaviors
 
 ### P1
 

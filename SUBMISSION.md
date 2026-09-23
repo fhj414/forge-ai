@@ -7,7 +7,7 @@
 - **访问方式：** 公网匿名访问，无需注册或登录
 - **默认模型：** `qwen/qwen3.5-9b:nitro`（通过 OpenRouter 调用，优先低延迟生成）
 - **技术栈：** Next.js App Router、React、TypeScript、Zod、Vitest、Testing Library；部署于 Vercel
-- **最近验收：** 2026-09-22，Node.js `v22.23.2`
+- **最近验收：** 2026-09-23，Node.js `v22.23.2`
 
 Forge AI 是一个端到端的 AI Web App Builder。用户可以用自然语言描述产品，观察真实生成过程，在隔离的 Preview 中运行生成结果，继续对话修改代码，并在发现运行时错误后显式请求 AI 修复。
 
@@ -16,7 +16,7 @@ Forge AI 是一个端到端的 AI Web App Builder。用户可以用自然语言�
 核心闭环为：
 
 ```text
-Generate → Validate → Preview → Check → Repair → Re-check
+Generate → Validate → Quality gate → Preview → Check → Repair → Re-check
 ```
 
 ## 60 秒体验路径
@@ -47,7 +47,9 @@ Generate → Validate → Preview → Check → Repair → Re-check
 - Zod Schema 校验
 - HTML、CSS、JavaScript 长度限制
 - 单一 55 秒请求预算
-- 有限的瞬时故障重试
+- 确定性的生成产物质量门：拒绝完整 HTML 文档、`script`/`style` 包装、内联事件处理器、网络 API、模块导入和 `document.write`
+- 对含可操作控件但缺少 JavaScript 或 `addEventListener` 接线的产物拒绝；JavaScript 会先做不执行的语法检查
+- Parse、Schema 或质量门失败时，最多附带精简的违规说明进行一次纠正性重试；瞬时上游/网络故障也最多重试一次，且所有尝试共用同一个 55 秒预算
 - 结构化错误码映射
 
 API Key 仅存在于服务端环境变量中，不会进入浏览器、项目数据、版本快照或导出的 HTML。
@@ -70,6 +72,9 @@ Preview 不启用 `allow-same-origin`，并通过 CSP 禁止网络连接、外�
 - 控件和表单数量
 - 未捕获 JavaScript 异常
 - 未处理 Promise rejection
+- 生成代码注册的直接事件监听器（不触发 click 或 submit）
+
+交互接线结果是有限证据，而不是业务正确性证明：`complete` 表示每个检测到的可操作项/表单都有直接监听器；`incomplete` 表示发现缺失的直接接线且没有委托信号；`unknown` 表示发现了委托或间接接线，需人工验证；`none` 表示没有检测到应用操作项。它不会合成点击、提交表单、检查业务状态或宣称任意业务语义正确。
 
 父页面只接受来自当前 iframe、当前 opaque session 的有界消息。健康检查不会自动点击、提交表单或判断业务逻辑，也不会自动产生模型费用。
 
@@ -94,7 +99,7 @@ Preview 不启用 `allow-same-origin`，并通过 CSP 禁止网络连接、外�
 | 对话式 Refinement | 已完成 | 携带当前源码增量修改，而非重新生成 |
 | Code 在线编辑 | 已完成 | HTML/CSS/JS、Apply、Discard、复制、未保存提示、快捷键 |
 | 版本历史 | 已完成 | 最近十个快照、来源标签、一键 Restore |
-| Preview Health | 已完成 | 运行时检测、结构信息、超时/不可用/重试状态 |
+| Preview Health | 已完成 | 运行时检测、结构信息和有限的交互接线证据：`complete`、`incomplete`、`unknown`、`none` |
 | AI 一键修复 | 已完成 | 显式触发、修复前快照、失败不破坏现有结果 |
 | 生成元数据 | 已完成 | 模型、耗时、行数、字节数、Schema 状态 |
 | 独立 HTML 导出 | 已完成 | 下载后可直接打开，不包含 API Key |
@@ -124,28 +129,29 @@ WebContainer 或 Sandpack 可以提供更接近真实工程的多文件体验，
 
 ## 工程质量与验证
 
-以下结果于 2026-09-22 使用 Node.js `v22.23.2` 重新执行：
+以下结果于 2026-09-23 使用 Node.js `v22.23.2` 重新执行：
 
 | 检查 | 命令或路径 | 结果 |
 | --- | --- | --- |
-| 自动化测试 | `npm test` | 17 个测试文件、94 个测试全部通过 |
+| 自动化测试 | `npm test` | 18 个测试文件、123 个测试全部通过 |
 | 静态检查 | `npm run lint` | 通过，无 ESLint 错误 |
 | 生产构建 | `npm run build` | Next.js 编译、TypeScript 检查和静态页面生成通过 |
 | Diff 格式 | `git diff --check` | 通过 |
-| 线上部署验收 | 自定义域名与 API 输入边界 | Vercel 部署成功；首页 HTTP 200；空 Prompt 返回结构化 HTTP 400 |
+| 生产构建浏览器验收 | Wired / inert / delegated fixtures | 直接接线为 `Runtime check passed` 与 `1/1 detected`，且点击改变 Preview；惰性控件为 `0/1 detected` 并给出可修复问题；委托接线为 `Manual verification needed`，不提供修复 |
 
-本轮将默认模型调整为 `qwen/qwen3.5-9b:nitro`。同一 Task Manager Prompt 的受控样本通常在约 20–27 秒内返回；模型服务仍可能出现长尾延迟，因此该区间不代表平均延迟或可用性 SLA。生成失败或 504 后，Forge 会恢复原 Prompt，并同时保留 Retry 与最后一个有效版本，用户可以立即重试或修改请求。生成的任务应用可新增、完成、筛选和删除任务；刷新后 Forge 项目及源码仍在，而 Preview 内临时新增的任务会重置，与上文描述的状态边界一致。
+本轮默认模型为 `qwen/qwen3.5-9b:nitro`。模型服务仍可能出现长尾延迟或显式超时；一次真实配置模型的请求已超时且没有产生成功 Preview，因此模型时延不构成可用性 SLA。生成失败或 504 后，Forge 会恢复原 Prompt，并同时保留 Retry 与最后一个有效版本，用户可以立即重试或修改请求。刷新后 Forge 项目及源码仍在，而 Preview 内临时业务数据会重置，与上文描述的状态边界一致。
 
-自动化测试覆盖 API 请求、Schema、持久化、版本恢复、代码编辑、导出、Preview Health 和显式 AI 修复。线上耗时和生成质量会随模型服务状态及 Prompt 变化，`Preview healthy` 也只代表当前渲染与有限运行时检查通过，不等于完整业务、视觉或无障碍验收。
+自动化测试覆盖 API 请求、Schema、质量门与纠正性重试、持久化、版本恢复、代码编辑、导出、Preview Health 和显式 AI 修复。浏览器验收确认的是运行时与有限监听器接线证据：`Runtime check passed` 不等于完整业务、视觉或无障碍验收；即使 `complete`，也不代表任意业务语义已经证明。
 
 ## 如果继续投入时间
 
-### P0：提升生成反馈和代码可靠性
+### P0：提升生成反馈、可观测性和可复现性
 
 1. 使用流式结构化输出，让用户更早看到模型响应和生成进度。
-2. 增加 JavaScript 静态语法校验、危险 HTML 检查和生成前后的自动质量门。
-3. 增加生产侧请求追踪、模型耗时分布和失败原因统计。
-4. 为公开生成接口增加限流、额度和滥用保护。
+2. 增加生产侧 provider telemetry，记录请求追踪、模型耗时分布、超时和失败原因。
+3. 比较不同模型在质量门、纠正性重试和 Preview 结果上的产出表现。
+4. 增加声明式 Preview smoke checks，为预期交互提供可复现的验证步骤。
+5. 为公开生成接口增加限流、额度和滥用保护。
 
 ### P1：从单设备 Demo 升级为可持续产品
 
