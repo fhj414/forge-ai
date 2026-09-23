@@ -19,6 +19,9 @@ export function createPreviewHealthRuntime(sessionId: string): string {
     const metricLimit = 10000;
     const registrationLimit = 10000;
     const activationEvents = new Set(["click", "keydown", "keypress", "keyup"]);
+    const toggleEvents = new Set(["click", "input", "change"]);
+    const valueEvents = new Set(["input", "change"]);
+    const buttonLikeInputTypes = new Set(["button", "submit", "reset", "image"]);
     const observedInteractionEvents = new Set([...activationEvents, "input", "change", "submit"]);
     const registrationsByTarget = new WeakMap();
     const registrations = [];
@@ -270,9 +273,62 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       }
     };
 
+    const tagNameOf = (element) => {
+      try {
+        return String(element?.tagName || "").toUpperCase();
+      } catch (error) {
+        return "";
+      }
+    };
+
+    const inputTypeOf = (element) => {
+      try {
+        return String(element?.type || "text").toLowerCase();
+      } catch (error) {
+        return "text";
+      }
+    };
+
+    const isButtonLikeAction = (element) => {
+      try {
+        const tagName = tagNameOf(element);
+        const role = String(element?.getAttribute?.("role") || "").toLowerCase();
+        return tagName === "BUTTON" || role === "button" ||
+          (tagName === "INPUT" && buttonLikeInputTypes.has(inputTypeOf(element)));
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const isValueControl = (element) => {
+      const tagName = tagNameOf(element);
+      return (tagName === "INPUT" || tagName === "SELECT" || tagName === "TEXTAREA") &&
+        !isButtonLikeAction(element);
+    };
+
+    const isHiddenControl = (element) => {
+      try {
+        return Boolean(element?.hidden || element?.hasAttribute?.("hidden")) ||
+          (tagNameOf(element) === "INPUT" && inputTypeOf(element) === "hidden");
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const compatibleEventsFor = (element) => {
+      if (isButtonLikeAction(element)) return activationEvents;
+      if (
+        tagNameOf(element) === "INPUT" &&
+        (inputTypeOf(element) === "checkbox" || inputTypeOf(element) === "radio")
+      ) {
+        return toggleEvents;
+      }
+      return valueEvents;
+    };
+
     const isSubmitAction = (element) => {
       try {
-        const tagName = String(element?.tagName || "").toUpperCase();
+        const tagName = tagNameOf(element);
         const type = String(element?.type || (tagName === "BUTTON" ? "submit" : "")).toLowerCase();
         return (tagName === "BUTTON" && type === "submit") ||
           (tagName === "INPUT" && (type === "submit" || type === "image"));
@@ -295,22 +351,24 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       const forms = Array.from(document.querySelectorAll("form")).slice(0, metricLimit);
       const wiredFormSet = new Set(forms.filter((form) => hasRegisteredType(form, ["submit"])));
       const allActions = Array.from(document.querySelectorAll(
-        'button, input[type="button"], input[type="submit"], input[type="reset"], input[type="image"], [role="button"]'
-      )).filter((element) => !isNativeLink(element)).slice(0, metricLimit);
+        'button, input, select, textarea, [role="button"]'
+      )).filter((element) => !isNativeLink(element) && !isHiddenControl(element)).slice(0, metricLimit);
       const advertisedActionElements = allActions.filter((element) => {
         const form = owningForm(element);
+        if (form && isValueControl(element)) return false;
         return !(form && isSubmitAction(element) && wiredFormSet.has(form));
       });
-      const activationEventList = Array.from(activationEvents);
       const wiredActions = advertisedActionElements.filter((element) =>
-        hasRegisteredType(element, activationEventList)
+        hasRegisteredType(element, compatibleEventsFor(element))
       ).length;
       let delegatedActionListeners = 0;
 
       for (const registration of registrations) {
         if (!isCallableListener(registration.listener)) continue;
-        const delegatesToAction = activationEvents.has(registration.type) &&
-          containsDescendant(registration.target, advertisedActionElements);
+        const delegatesToAction = advertisedActionElements.some((element) =>
+          compatibleEventsFor(element).has(registration.type) &&
+          containsDescendant(registration.target, [element])
+        );
         const delegatesToForm = registration.type === "submit" &&
           containsDescendant(registration.target, forms);
         if (delegatesToAction || delegatesToForm) {
@@ -403,8 +461,23 @@ export function createPreviewHealthRuntime(sessionId: string): string {
     };
     const onError = (event) => onFailure(event);
     const onUnhandledRejection = (event) => onFailure(event);
+    const reportAfterLoad = () => {
+      if (!settled) return;
+
+      const sendFinalReport = () => {
+        if (!settled) return;
+        report(issues.length > 0 ? "issues" : "healthy", measure());
+      };
+
+      try {
+        window.setTimeout(sendFinalReport, 0);
+      } catch (error) {
+        sendFinalReport();
+      }
+    };
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onUnhandledRejection);
+    window.addEventListener("load", reportAfterLoad, { once: true });
 
     report("checking", measure());
 

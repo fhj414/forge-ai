@@ -545,11 +545,12 @@ describe("BuilderWorkspace", () => {
     render(<BuilderWorkspace />);
 
     await screen.findByText("A focused task manager.");
+    await act(async () => {});
     const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
     dispatchHealthMessage(frame, issueReportFor(frame));
     await user.click(screen.getByRole("button", { name: "Ask AI to fix" }));
 
-    expect(screen.getByText("Fix 1 detected preview runtime issue")).toBeInTheDocument();
+    expect(screen.getByText("Fix 1 detected preview issue")).toBeInTheDocument();
     expect(screen.queryByText(/chart\.js:44/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ask AI to fix" })).toBeDisabled();
     const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)) as {
@@ -588,7 +589,7 @@ describe("BuilderWorkspace", () => {
       expect(projects[0]?.revisionSource).toBe("auto_fix");
       expect(projects[0]?.messages.at(-2)).toMatchObject({
         role: "user",
-        content: "Fix 1 detected preview runtime issue",
+        content: "Fix 1 detected preview issue",
       });
       expect(projects[0]?.revisions[0]).toMatchObject({
         source: "refinement",
@@ -644,6 +645,7 @@ describe("BuilderWorkspace", () => {
     render(<BuilderWorkspace />);
 
     await screen.findByText("A focused task manager.");
+    await act(async () => {});
     const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
     const originalSrcDoc = frame.srcdoc;
     dispatchHealthMessage(frame, issueReportFor(frame));

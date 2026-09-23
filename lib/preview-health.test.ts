@@ -113,10 +113,12 @@ describe("preview health protocol", () => {
     expect(prompts.requestPrompt).toContain("delegated action listeners: 0");
     expect(prompts.requestPrompt).toContain("Preserve useful behavior");
     expect(prompts.requestPrompt).toContain("change only what is needed");
+    expect(prompts.requestPrompt).toContain("detected preview issue");
+    expect(prompts.requestPrompt).not.toContain("preview runtime issue");
     expect(prompts.requestPrompt).toContain("complete artifact");
     expect(prompts.requestPrompt).toContain("Do not hide errors");
     expect(prompts.requestPrompt).not.toContain(issue.stack);
-    expect(prompts.displayPrompt).toBe("Fix 1 detected preview runtime issue");
+    expect(prompts.displayPrompt).toBe("Fix 1 detected preview issue");
   });
 
   it("preserves a reported column when no line is available", () => {

@@ -130,4 +130,73 @@ describe("validateGeneratedAppQuality", () => {
       }).violationCodes,
     ).toContain("JAVASCRIPT_NETWORK_API");
   });
+
+  it("rejects top-level return as invalid classic-script syntax", async () => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        javascript: "return 1;",
+      }).violationCodes,
+    ).toContain("JAVASCRIPT_SYNTAX_ERROR");
+  });
+
+  it.each([
+    ["direct fetch", "fetch('/api');"],
+    ["optional fetch", "fetch?.('/api');"],
+    ["aliased fetch", "const request = fetch; request('/api');"],
+    ["computed window fetch", "window['fetch']('/api');"],
+    ["optional navigator sendBeacon", "navigator?.sendBeacon('/collect', 'data');"],
+    ["aliased XMLHttpRequest", "const Request = XMLHttpRequest; new Request();"],
+  ])("rejects %s as a browser network API reference", async (_label, javascript) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({ ...staticApp, javascript })
+        .violationCodes,
+    ).toContain("JAVASCRIPT_NETWORK_API");
+  });
+
+  it.each([
+    ["direct", "document.write;"],
+    ["optional", "document?.write('<p>unsafe</p>');"],
+    ["computed", "document['write']('<p>unsafe</p>');"],
+  ])("rejects %s document.write access", async (_label, javascript) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({ ...staticApp, javascript })
+        .violationCodes,
+    ).toContain("JAVASCRIPT_DOCUMENT_WRITE");
+  });
+
+  it("rejects comment-separated dynamic imports", async () => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        javascript: "import /* keep comments from hiding syntax */ ('./feature.js');",
+      }).violationCodes,
+    ).toContain("JAVASCRIPT_MODULE_IMPORT");
+  });
+
+  it("ignores forbidden API names that appear only in strings or comments", async () => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        javascript: [
+          'const note = "document.write( fetch?.( import( navigator.sendBeacon(";',
+          "// window['fetch']('/api')",
+          "/* document?.write('ignored') */",
+        ].join("\n"),
+      }),
+    ).toEqual({
+      violationCodes: [],
+      correctiveMessage: "",
+    });
+  });
 });

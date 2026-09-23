@@ -177,6 +177,25 @@ describe("PreviewPanel", () => {
     expect(screen.getByText("Checking preview…")).toBeInTheDocument();
     expect(screen.queryByText(/Interaction wiring:/)).not.toBeInTheDocument();
   });
+
+  it("accepts a final re-report after a delayed iframe load resets earlier results", () => {
+    render(<PreviewPanel project={project} />);
+    const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
+    const finalReport = reportFor(frame, { status: "healthy" });
+
+    dispatchHealthMessage(frame, finalReport);
+    expect(screen.getByText("Runtime check passed")).toBeInTheDocument();
+
+    fireEvent.load(frame);
+    expect(screen.getByText("Checking preview…")).toBeInTheDocument();
+
+    dispatchHealthMessage(frame, {
+      ...finalReport,
+      reportedAt: finalReport.reportedAt + 1,
+    });
+    expect(screen.getByText("Runtime check passed")).toBeInTheDocument();
+    expect(screen.getByText("Interaction wiring: 1/1 detected")).toBeInTheDocument();
+  });
 });
 
 function sessionFrom(frame: HTMLIFrameElement): string {

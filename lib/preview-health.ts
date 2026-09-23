@@ -105,7 +105,7 @@ function issueLocation(issue: PreviewHealthIssue): string {
 
 function repairInstructions(): string {
   return [
-    "Preserve useful behavior; change only what is needed to resolve the detected preview runtime issue.",
+    "Preserve useful behavior; change only what is needed to resolve the detected preview issue.",
     "Return a complete artifact that can be rendered as-is.",
     "Do not hide errors or remove useful diagnostics.",
   ].join(" ");
@@ -129,12 +129,12 @@ export function buildPreviewRepairPrompt(report: PreviewHealthReport): {
     `Preview delegated action listeners: ${report.delegatedActionListeners}.`,
   ].join("\n");
   const instructions = repairInstructions();
-  const prefix = `Repair the preview runtime issues below.\n${facts}\nDetected issues:\n${diagnostics || "none"}`;
+  const prefix = `Repair the preview issues below.\n${facts}\nDetected issues:\n${diagnostics || "none"}`;
   const availablePrefixLength = Math.max(0, 4_000 - instructions.length - 2);
   const requestPrompt = `${prefix.slice(0, availablePrefixLength)}\n\n${instructions}`;
 
   return {
     requestPrompt,
-    displayPrompt: `Fix ${report.issues.length} detected preview runtime issue${report.issues.length === 1 ? "" : "s"}`,
+    displayPrompt: `Fix ${report.issues.length} detected preview issue${report.issues.length === 1 ? "" : "s"}`,
   };
 }

@@ -266,6 +266,27 @@ describe("createPreviewHealthRuntime", () => {
     });
   });
 
+  it("re-reports a settled final result after the window load event", () => {
+    const harness = runRuntime({ bodyText: "Dashboard", readyState: "complete" });
+
+    settleRuntime(harness);
+    expect(harness.messages.map((message) => message.status)).toEqual([
+      "checking",
+      "healthy",
+    ]);
+
+    harness.windowListeners.get("load")?.({});
+    const postLoadTimer = harness.timers.find((timer) => timer.delay === 0);
+    expect(postLoadTimer).toBeDefined();
+    postLoadTimer?.callback();
+
+    expect(harness.messages.map((message) => message.status)).toEqual([
+      "checking",
+      "healthy",
+      "healthy",
+    ]);
+  });
+
   it("reports complete direct wiring without invoking generated listeners", () => {
     let listenerCalls = 0;
     const harness = runDomRuntime(
@@ -453,6 +474,108 @@ describe("createPreviewHealthRuntime", () => {
     });
   });
 
+  it("credits a direct checkbox listener registered for a compatible event", () => {
+    const harness = runDomRuntime(
+      '<label><input id="alerts" type="checkbox"> Alerts</label>',
+      (window) => {
+        window.document.querySelector("#alerts")?.addEventListener("input", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "healthy",
+      advertisedActions: 1,
+      wiredActions: 1,
+      delegatedActionListeners: 0,
+      interactionCoverage: "complete",
+    });
+  });
+
+  it("reports a standalone checkbox without compatible wiring as incomplete", () => {
+    const harness = runDomRuntime(
+      '<label><input id="alerts" type="checkbox"> Alerts</label>',
+      (window) => {
+        window.document.querySelector("#alerts")?.addEventListener("keydown", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 1,
+      wiredActions: 0,
+      delegatedActionListeners: 0,
+      interactionCoverage: "incomplete",
+    });
+  });
+
+  it("reports compatible delegated checkbox wiring as unknown", () => {
+    const harness = runDomRuntime(
+      '<section><label><input id="alerts" type="checkbox"> Alerts</label></section>',
+      (window) => {
+        window.document.addEventListener("click", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "healthy",
+      advertisedActions: 1,
+      wiredActions: 0,
+      delegatedActionListeners: 1,
+      interactionCoverage: "unknown",
+    });
+  });
+
+  it("credits a direct select listener registered for a compatible event", () => {
+    const harness = runDomRuntime(
+      '<label>View <select id="view"><option>Board</option></select></label>',
+      (window) => {
+        window.document.querySelector("#view")?.addEventListener("change", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "healthy",
+      advertisedActions: 1,
+      wiredActions: 1,
+      delegatedActionListeners: 0,
+      interactionCoverage: "complete",
+    });
+  });
+
+  it("reports a standalone select without compatible wiring as incomplete", () => {
+    const harness = runDomRuntime(
+      '<label>View <select id="view"><option>Board</option></select></label>',
+      (window) => {
+        window.document.querySelector("#view")?.addEventListener("click", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 1,
+      wiredActions: 0,
+      delegatedActionListeners: 0,
+      interactionCoverage: "incomplete",
+    });
+  });
+
+  it("reports compatible delegated select wiring as unknown", () => {
+    const harness = runDomRuntime(
+      '<section><label>View <select id="view"><option>Board</option></select></label></section>',
+      (window) => {
+        window.document.addEventListener("change", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "healthy",
+      advertisedActions: 1,
+      wiredActions: 0,
+      delegatedActionListeners: 1,
+      interactionCoverage: "unknown",
+    });
+  });
+
   it("does not keep inactive delegated listeners as unknown-coverage evidence", () => {
     let onceCalls = 0;
     const harness = runDomRuntime('<button id="save">Save</button>', (window) => {
@@ -554,6 +677,34 @@ describe("createPreviewHealthRuntime", () => {
     });
   });
 
+  it("lets submit wiring own ordinary value controls inside its form", () => {
+    const harness = runDomRuntime(
+      [
+        '<form id="settings">',
+        '<input name="title">',
+        '<input name="alerts" type="checkbox">',
+        '<select name="view"><option>Board</option></select>',
+        '<textarea name="notes"></textarea>',
+        '<button type="submit">Save</button>',
+        '<button type="button" id="reset">Reset</button>',
+        "</form>",
+      ].join(""),
+      (window) => {
+        window.document.querySelector("#settings")?.addEventListener("submit", () => {});
+        window.document.querySelector("#reset")?.addEventListener("click", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "healthy",
+      advertisedActions: 1,
+      wiredActions: 1,
+      advertisedForms: 1,
+      wiredForms: 1,
+      interactionCoverage: "complete",
+    });
+  });
+
   it("does not credit Forge's compatibility submit guard as generated form wiring", () => {
     const harness = runComposedRuntime(
       '<form><button type="submit">Save</button></form>',
@@ -585,8 +736,10 @@ describe("createPreviewHealthRuntime", () => {
     });
   });
 
-  it("reports none for static content and ignores native links", () => {
-    const harness = runDomRuntime('<main>Documentation <a href="/docs">Read more</a></main>');
+  it("reports none for static content and ignores native links and hidden controls", () => {
+    const harness = runDomRuntime(
+      '<main>Documentation <a href="/docs">Read more</a><input type="hidden"><select hidden><option>Hidden</option></select><textarea hidden></textarea></main>',
+    );
 
     expect(harness.messages.at(-1)).toMatchObject({
       status: "healthy",

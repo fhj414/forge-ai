@@ -6,7 +6,7 @@
 - **GitHub：** [https://github.com/fhj414/forge-ai](https://github.com/fhj414/forge-ai)
 - **访问方式：** 公网匿名访问，无需注册或登录
 - **默认模型：** `qwen/qwen3.5-9b:nitro`（通过 OpenRouter 调用，优先低延迟生成）
-- **技术栈：** Next.js App Router、React、TypeScript、Zod、Vitest、Testing Library；部署于 Vercel
+- **技术栈：** Next.js App Router、React、TypeScript、Zod、Acorn、Vitest、Testing Library；部署于 Vercel
 - **最近验收：** 2026-09-23，Node.js `v22.23.2`
 
 Forge AI 是一个端到端的 AI Web App Builder。用户可以用自然语言描述产品，观察真实生成过程，在隔离的 Preview 中运行生成结果，继续对话修改代码，并在发现运行时错误后显式请求 AI 修复。
@@ -48,7 +48,8 @@ Generate → Validate → Quality gate → Preview → Check → Repair → Re-c
 - HTML、CSS、JavaScript 长度限制
 - 单一 55 秒请求预算
 - 确定性的生成产物质量门：拒绝完整 HTML 文档、`script`/`style` 包装、内联事件处理器、网络 API、模块导入和 `document.write`
-- 对含可操作控件但缺少 JavaScript 或 `addEventListener` 接线的产物拒绝；JavaScript 会先做不执行的语法检查
+- Acorn 以 current ECMAScript classic-script 模式解析 JavaScript，质量门只遍历 AST、从不执行生成代码，并避免把字符串或注释中的 API 名称误判为代码
+- 对含可操作控件但缺少 JavaScript 或 `addEventListener` 接线的产物拒绝
 - Parse、Schema 或质量门失败时，最多附带精简的违规说明进行一次纠正性重试；瞬时上游/网络故障也最多重试一次，且所有尝试共用同一个 55 秒预算
 - 结构化错误码映射
 
@@ -74,7 +75,9 @@ Preview 不启用 `allow-same-origin`，并通过 CSP 禁止网络连接、外�
 - 未处理 Promise rejection
 - 生成代码注册的直接事件监听器（不触发 click 或 submit）
 
-交互接线结果是有限证据，而不是业务正确性证明：`complete` 表示每个检测到的可操作项/表单都有直接监听器；`incomplete` 表示发现缺失的直接接线且没有委托信号；`unknown` 表示发现了委托或间接接线，需人工验证；`none` 表示没有检测到应用操作项。它不会合成点击、提交表单、检查业务状态或宣称任意业务语义正确。
+交互接线结果是有限证据，而不是业务正确性证明：按钮类控件使用点击/键盘激活证据，checkbox/radio 使用 `click`/`input`/`change`，其余独立输入框、select 和 textarea 使用 `input`/`change`；表单内普通字段由表单的 submit 接线负责，不会被重复列为必需操作。`complete` 表示每个检测到的可操作项/表单都有直接监听器；`incomplete` 表示发现缺失的直接接线且没有委托信号；`unknown` 表示发现了委托或间接接线，需人工验证；`none` 表示没有检测到应用操作项。它不会合成点击、提交表单、检查业务状态或宣称任意业务语义正确。
+
+父页面仍会在 iframe load 时重置状态；若慢资源导致子页面先完成检测，诊断运行时会在 load 后通过一次零延迟任务重新发送最终报告，不使用轮询、循环计时器或合成交互。
 
 父页面只接受来自当前 iframe、当前 opaque session 的有界消息。健康检查不会自动点击、提交表单或判断业务逻辑，也不会自动产生模型费用。
 
@@ -133,7 +136,7 @@ WebContainer 或 Sandpack 可以提供更接近真实工程的多文件体验，
 
 | 检查 | 命令或路径 | 结果 |
 | --- | --- | --- |
-| 自动化测试 | `npm test` | 18 个测试文件、123 个测试全部通过 |
+| 自动化测试 | `npm test` | 18 个测试文件、144 个测试全部通过 |
 | 静态检查 | `npm run lint` | 通过，无 ESLint 错误 |
 | 生产构建 | `npm run build` | Next.js 编译、TypeScript 检查和静态页面生成通过 |
 | Diff 格式 | `git diff --check` | 通过 |

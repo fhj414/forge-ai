@@ -58,6 +58,7 @@ Generate → Validate → Quality gate → Preview → Check → Repair → Re-c
 - Next.js App Router, React, and strict TypeScript
 - Tailwind CSS build pipeline with product-specific global tokens and CSS
 - Zod for request and model-output validation
+- Acorn for non-executing classic-script parsing and focused AST inspection
 - Lucide React icons
 - Browser `localStorage` through a replaceable storage adapter
 - Vitest and Testing Library
@@ -78,7 +79,7 @@ flowchart LR
   ProjectStore --> LocalStorage[(localStorage)]
 ```
 
-The client never receives the AI key. `/api/generate` adds the dedicated system prompt, applies one shared 55-second request budget, strips Markdown fences, extracts JSON, validates every field, and applies a deterministic artifact-quality gate before returning a result. The gate rejects document/script/style wrappers and inline HTML handlers; requires syntactically valid JavaScript plus `addEventListener` wiring for actionable markup; and rejects browser network APIs, module imports, and `document.write`. Parse, schema, or quality failures receive at most one compact corrective model attempt; transient provider or network failures likewise receive at most one retry. All attempts share the same deadline, and a timeout is returned immediately instead of starting another full model request.
+The client never receives the AI key. `/api/generate` adds the dedicated system prompt, applies one shared 55-second request budget, strips Markdown fences, extracts JSON, validates every field, and applies a deterministic artifact-quality gate before returning a result. Acorn parses generated JavaScript as current-ECMAScript classic script without executing it, then a focused AST walk rejects browser network API references, module imports, and `document.write` access without treating strings or comments as code. The gate also rejects document/script/style wrappers and inline HTML handlers and requires `addEventListener` wiring for actionable markup. Parse, schema, or quality failures receive at most one compact corrective model attempt; transient provider or network failures likewise receive at most one retry. All attempts share the same deadline, and a timeout is returned immediately instead of starting another full model request.
 
 ## Key engineering decisions
 
@@ -114,7 +115,9 @@ Network and model errors are represented as recoverable UI state. A failed refin
 
 ### 6. Preview Health and explicit AI repair
 
-Each active preview runs a non-invasive health check after it renders. It reports whether meaningful content rendered, counts controls and forms, captures bounded uncaught JavaScript errors and unhandled promise rejections, and observes generated-code listener registration without invoking user actions. Its interaction result is deliberately bounded: `complete` means every detected advertised action/form has direct listener wiring; `incomplete` means direct wiring is missing and no delegation signal was observed; `unknown` means delegated or indirect wiring requires manual verification; and `none` means no advertised app actions were detected. It does not click controls, submit forms, judge visual quality, inspect application state, or verify business logic. Listener wiring is evidence of registration, not proof that arbitrary business behavior is correct.
+Each active preview runs a non-invasive health check after it renders. It reports whether meaningful content rendered, counts controls and forms, captures bounded uncaught JavaScript errors and unhandled promise rejections, and observes generated-code listener registration without invoking user actions. Advertised actions include button-like controls and non-hidden standalone inputs, selects, and textareas, with event compatibility matched per control; ordinary value fields inside a form remain owned by that form's submit wiring. Its interaction result is deliberately bounded: `complete` means every detected advertised action/form has direct listener wiring; `incomplete` means direct wiring is missing and no delegation signal was observed; `unknown` means delegated or indirect wiring requires manual verification; and `none` means no advertised app actions were detected. It does not click controls, submit forms, judge visual quality, inspect application state, or verify business logic. Listener wiring is evidence of registration, not proof that arbitrary business behavior is correct.
+
+The parent still resets health on iframe load. If a slow resource lets the child settle before that reset, the settled runtime schedules one zero-delay final re-report from its load handler, so the final evidence is restored without polling, recurring timers, or synthetic interaction.
 
 Repair is always an explicit `Ask AI to fix` action, enabled only when a concrete issue is present. The existing generation path receives the current source plus normalized, size-bounded diagnostics. Forge does not retry a repair from a health result, so there is no automatic spend or repair loop. A failed provider, network, timeout, or schema response preserves the current preview and its revision history.
 
@@ -164,7 +167,7 @@ npm run lint
 npm run build
 ```
 
-The 2026-09-23 delivery verification passed 123 tests across 18 test files, TypeScript checking, lint, and the production build. Browser QA against the production build confirmed a directly wired fixture (`Runtime check passed`, `1/1 detected`) and that its control changed the preview; an inert fixture reported `0/1 detected` with a concrete repairable issue; and delegated wiring reported `Manual verification needed` without offering repair. These checks are bounded evidence, not a claim that generated application business semantics are proven.
+The 2026-09-23 delivery verification passed 144 tests across 18 test files, TypeScript checking, lint, and the production build. Browser QA against the production build confirmed a directly wired fixture (`Runtime check passed`, `1/1 detected`) and that its control changed the preview; an inert fixture reported `0/1 detected` with a concrete repairable issue; and delegated wiring reported `Manual verification needed` without offering repair. These checks are bounded evidence, not a claim that generated application business semantics are proven.
 
 ## Deploy to Vercel
 
