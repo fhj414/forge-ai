@@ -213,6 +213,43 @@ describe("validateGeneratedAppQuality", () => {
     });
   });
 
+  it.each(
+    ["fetch", "XMLHttpRequest", "WebSocket", "EventSource"].flatMap(
+      (propertyName) => [
+        [
+          `default declaration ${propertyName}`,
+          `const { ${propertyName} = safeApi } = app; safeApi();`,
+        ],
+        [
+          `default assignment ${propertyName}`,
+          `({ ${propertyName} = safeApi } = app); safeApi();`,
+        ],
+        [`rest declaration ${propertyName}`, `const { ...${propertyName} } = app;`],
+        [`rest assignment ${propertyName}`, `({ ...${propertyName} } = app);`],
+      ],
+    ),
+  )("ignores %s bindings from unrelated objects", async (_label, javascript) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({ ...staticApp, javascript }),
+    ).toEqual({
+      violationCodes: [],
+      correctiveMessage: "",
+    });
+  });
+
+  it("still detects forbidden references in destructuring default initializers", async () => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        javascript: "const { safe = XMLHttpRequest } = app; safe();",
+      }).violationCodes,
+    ).toContain("JAVASCRIPT_NETWORK_API");
+  });
+
   it.each([
     ["direct", "document.write;"],
     ["optional", "document?.write('<p>unsafe</p>');"],

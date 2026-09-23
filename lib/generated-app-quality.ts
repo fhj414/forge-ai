@@ -83,6 +83,49 @@ function isAstNode(value: unknown): value is AstNode {
   );
 }
 
+function isDestructuringPattern(value: unknown): boolean {
+  const node = isAstNode(value) ? value : undefined;
+  return node?.type === "ObjectPattern" || node?.type === "ArrayPattern";
+}
+
+function childIsBindingPosition(
+  parent: AstNode,
+  parentKey: string,
+  child: AstNode,
+  parentIsBindingPosition: boolean,
+): boolean {
+  if (
+    (parent.type === "VariableDeclarator" && parentKey === "id") ||
+    (parent.type === "AssignmentExpression" &&
+      parentKey === "left" &&
+      isDestructuringPattern(child)) ||
+    ((parent.type === "FunctionDeclaration" ||
+      parent.type === "FunctionExpression" ||
+      parent.type === "ArrowFunctionExpression") &&
+      parentKey === "params" &&
+      isDestructuringPattern(child)) ||
+    (parent.type === "CatchClause" &&
+      parentKey === "param" &&
+      isDestructuringPattern(child))
+  ) {
+    return true;
+  }
+
+  if (!parentIsBindingPosition) return false;
+
+  if (
+    (parent.type === "ObjectPattern" && parentKey === "properties") ||
+    (parent.type === "ArrayPattern" && parentKey === "elements") ||
+    (parent.type === "Property" && parentKey === "value") ||
+    (parent.type === "AssignmentPattern" && parentKey === "left") ||
+    (parent.type === "RestElement" && parentKey === "argument")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function walkAst(
   node: AstNode,
   visit: (
@@ -90,22 +133,40 @@ function walkAst(
     parent?: AstNode,
     parentKey?: string,
     grandparent?: AstNode,
+    bindingPosition?: boolean,
   ) => void,
   parent?: AstNode,
   parentKey?: string,
   grandparent?: AstNode,
+  bindingPosition = false,
 ) {
-  visit(node, parent, parentKey, grandparent);
+  visit(node, parent, parentKey, grandparent, bindingPosition);
 
   for (const [key, value] of Object.entries(node)) {
     if (isAstNode(value)) {
-      walkAst(value, visit, node, key, parent);
+      walkAst(
+        value,
+        visit,
+        node,
+        key,
+        parent,
+        childIsBindingPosition(node, key, value, bindingPosition),
+      );
       continue;
     }
 
     if (!Array.isArray(value)) continue;
     for (const child of value) {
-      if (isAstNode(child)) walkAst(child, visit, node, key, parent);
+      if (isAstNode(child)) {
+        walkAst(
+          child,
+          visit,
+          node,
+          key,
+          parent,
+          childIsBindingPosition(node, key, child, bindingPosition),
+        );
+      }
     }
   }
 }
@@ -213,8 +274,11 @@ function isReferenceIdentifier(
   parent: AstNode | undefined,
   parentKey: string | undefined,
   grandparent: AstNode | undefined,
+  bindingPosition = false,
 ): boolean {
   if (!parent) return true;
+
+  if (bindingPosition) return false;
 
   if (
     parent.type === "Property" &&
@@ -304,7 +368,7 @@ function analyzeJavaScript(program?: AstNode) {
     }
   };
 
-  walkAst(program, (node, parent, parentKey, grandparent) => {
+  walkAst(program, (node, parent, parentKey, grandparent, bindingPosition) => {
     if (node.type === "VariableDeclarator") {
       registerDestructuredAliases(node.id, node.init);
     }
@@ -331,7 +395,12 @@ function analyzeJavaScript(program?: AstNode) {
     if (
       node.type === "Identifier" &&
       typeof node.name === "string" &&
-      isReferenceIdentifier(parent, parentKey, grandparent) &&
+      isReferenceIdentifier(
+        parent,
+        parentKey,
+        grandparent,
+        bindingPosition,
+      ) &&
       (DIRECT_NETWORK_IDENTIFIERS.has(node.name) ||
         networkAliases.has(node.name))
     ) {
@@ -342,7 +411,12 @@ function analyzeJavaScript(program?: AstNode) {
       node.type === "Identifier" &&
       typeof node.name === "string" &&
       documentWriteAliases.has(node.name) &&
-      isReferenceIdentifier(parent, parentKey, grandparent)
+      isReferenceIdentifier(
+        parent,
+        parentKey,
+        grandparent,
+        bindingPosition,
+      )
     ) {
       usesDocumentWrite = true;
     }
