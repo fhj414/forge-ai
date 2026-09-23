@@ -136,7 +136,7 @@ WebContainer 或 Sandpack 可以提供更接近真实工程的多文件体验，
 
 | 检查 | 命令或路径 | 结果 |
 | --- | --- | --- |
-| 自动化测试 | `npm test` | 18 个测试文件、144 个测试全部通过 |
+| 自动化测试 | `npm test` | 18 个测试文件、167 个测试全部通过 |
 | 静态检查 | `npm run lint` | 通过，无 ESLint 错误 |
 | 生产构建 | `npm run build` | Next.js 编译、TypeScript 检查和静态页面生成通过 |
 | Diff 格式 | `git diff --check` | 通过 |
