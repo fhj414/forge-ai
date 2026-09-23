@@ -26,6 +26,12 @@ const reportSchema = z
     hasMeaningfulContent: z.boolean(),
     interactiveControls: z.number().int().nonnegative().max(10_000),
     forms: z.number().int().nonnegative().max(10_000),
+    advertisedActions: z.number().int().nonnegative().max(10_000),
+    wiredActions: z.number().int().nonnegative().max(10_000),
+    advertisedForms: z.number().int().nonnegative().max(10_000),
+    wiredForms: z.number().int().nonnegative().max(10_000),
+    delegatedActionListeners: z.number().int().nonnegative().max(10_000),
+    interactionCoverage: z.enum(["none", "complete", "incomplete", "unknown"]),
     issues: z.array(issueSchema).max(5),
     reportedAt: z.number().int().nonnegative(),
   })
@@ -46,7 +52,40 @@ export function parsePreviewHealthMessage(
     return null;
   }
 
-  return result.data;
+  const report = result.data;
+  if (
+    report.wiredActions > report.advertisedActions ||
+    report.wiredForms > report.advertisedForms ||
+    report.advertisedActions > report.interactiveControls ||
+    report.advertisedForms !== report.forms
+  ) {
+    return null;
+  }
+
+  const advertisedInteractions = report.advertisedActions + report.advertisedForms;
+  const hasFullDirectCoverage =
+    report.wiredActions === report.advertisedActions &&
+    report.wiredForms === report.advertisedForms;
+  const expectedCoverage =
+    advertisedInteractions === 0
+      ? report.delegatedActionListeners === 0
+        ? "none"
+        : "unknown"
+      : hasFullDirectCoverage
+        ? "complete"
+        : report.delegatedActionListeners > 0
+          ? "unknown"
+          : "incomplete";
+
+  if (report.interactionCoverage !== expectedCoverage) return null;
+  if (
+    report.interactionCoverage === "incomplete" &&
+    (report.status !== "issues" || report.issues.length === 0)
+  ) {
+    return null;
+  }
+
+  return report;
 }
 
 function issueLocation(issue: PreviewHealthIssue): string {
@@ -84,6 +123,10 @@ export function buildPreviewRepairPrompt(report: PreviewHealthReport): {
     `Preview rendered meaningful content: ${report.hasMeaningfulContent ? "yes" : "no"}.`,
     `Preview interactive controls: ${report.interactiveControls}.`,
     `Preview forms: ${report.forms}.`,
+    `Preview interaction coverage: ${report.interactionCoverage}.`,
+    `Preview advertised actions: ${report.advertisedActions}; directly wired: ${report.wiredActions}.`,
+    `Preview advertised forms: ${report.advertisedForms}; directly wired: ${report.wiredForms}.`,
+    `Preview delegated action listeners: ${report.delegatedActionListeners}.`,
   ].join("\n");
   const instructions = repairInstructions();
   const prefix = `Repair the preview runtime issues below.\n${facts}\nDetected issues:\n${diagnostics || "none"}`;

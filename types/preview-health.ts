@@ -1,5 +1,11 @@
 export const PREVIEW_HEALTH_CHANNEL = "forge:preview-health" as const;
-export const PREVIEW_HEALTH_VERSION = 1 as const;
+export const PREVIEW_HEALTH_VERSION = 2 as const;
+
+export type PreviewInteractionCoverage =
+  | "none"
+  | "complete"
+  | "incomplete"
+  | "unknown";
 
 export interface PreviewHealthIssue {
   message: string;
@@ -17,6 +23,12 @@ export interface PreviewHealthReport {
   hasMeaningfulContent: boolean;
   interactiveControls: number;
   forms: number;
+  advertisedActions: number;
+  wiredActions: number;
+  advertisedForms: number;
+  wiredForms: number;
+  delegatedActionListeners: number;
+  interactionCoverage: PreviewInteractionCoverage;
   issues: PreviewHealthIssue[];
   reportedAt: number;
 }

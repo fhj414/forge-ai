@@ -236,12 +236,18 @@ export function PreviewPanel({
 function checkingState(sessionId: string): PreviewHealthReport {
   return {
     channel: "forge:preview-health",
-    version: 1,
+    version: 2,
     sessionId,
     status: "checking",
     hasMeaningfulContent: false,
     interactiveControls: 0,
     forms: 0,
+    advertisedActions: 0,
+    wiredActions: 0,
+    advertisedForms: 0,
+    wiredForms: 0,
+    delegatedActionListeners: 0,
+    interactionCoverage: "none",
     issues: [],
     reportedAt: Date.now(),
   };

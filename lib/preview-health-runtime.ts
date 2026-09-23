@@ -17,6 +17,12 @@ export function createPreviewHealthRuntime(sessionId: string): string {
     const issues = [];
     const issueLimit = 5;
     const metricLimit = 10000;
+    const registrationLimit = 10000;
+    const directActionEvents = new Set(["click", "input", "change", "keydown", "keypress", "keyup"]);
+    const observedInteractionEvents = new Set([...directActionEvents, "submit"]);
+    const registeredTypes = new WeakMap();
+    const registrations = [];
+    let observingRegistrations = true;
     let settled = false;
 
     const text = (value, limit) => {
@@ -48,6 +54,42 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       return Math.min(metricLimit, length === undefined ? 0 : length);
     };
 
+    const rememberRegistration = (target, type, listener) => {
+      try {
+        if (!observingRegistrations) return;
+        const isCallableListener = typeof listener === "function" ||
+          Boolean(listener && typeof listener.handleEvent === "function");
+        if (!isCallableListener) return;
+        const normalizedType = typeof type === "string" ? type : "";
+        if (!observedInteractionEvents.has(normalizedType)) return;
+        let types = registeredTypes.get(target);
+        if (!types) {
+          types = new Set();
+          registeredTypes.set(target, types);
+        }
+        types.add(normalizedType);
+        if (registrations.length < registrationLimit) {
+          registrations.push({ target, type: normalizedType });
+        }
+      } catch (error) {}
+    };
+
+    try {
+      const eventTargetPrototype = window.EventTarget?.prototype;
+      const originalAddEventListener = eventTargetPrototype?.addEventListener;
+      if (typeof originalAddEventListener === "function") {
+        Object.defineProperty(eventTargetPrototype, "addEventListener", {
+          configurable: true,
+          writable: true,
+          value: function(type, listener, options) {
+            const result = originalAddEventListener.call(this, type, listener, options);
+            rememberRegistration(this, type, listener);
+            return result;
+          },
+        });
+      }
+    } catch (error) {}
+
     const addIssue = (value) => {
       try {
         if (issues.length >= issueLimit) return;
@@ -64,7 +106,112 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       } catch (error) {}
     };
 
+    const addRequiredIssue = (value) => {
+      try {
+        if (issues.length >= issueLimit) issues.pop();
+        addIssue(value);
+      } catch (error) {}
+    };
+
+    const hasRegisteredType = (target, types) => {
+      try {
+        const targetTypes = registeredTypes.get(target);
+        return Boolean(targetTypes && types.some((type) => targetTypes.has(type)));
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const isNativeLink = (element) => {
+      try {
+        return element?.tagName === "A" && element.hasAttribute?.("href");
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const owningForm = (element) => {
+      try {
+        return element?.form || element?.closest?.("form") || null;
+      } catch (error) {
+        return null;
+      }
+    };
+
+    const isSubmitAction = (element) => {
+      try {
+        const tagName = String(element?.tagName || "").toUpperCase();
+        const type = String(element?.type || (tagName === "BUTTON" ? "submit" : "")).toLowerCase();
+        return (tagName === "BUTTON" && type === "submit") ||
+          (tagName === "INPUT" && (type === "submit" || type === "image"));
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const containsInteraction = (target, interactions) => {
+      try {
+        if (target === window || target === document) return true;
+        return typeof target?.contains === "function" &&
+          interactions.some((interaction) => interaction !== target && target.contains(interaction));
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const measureInteractions = () => {
+      const forms = Array.from(document.querySelectorAll("form")).slice(0, metricLimit);
+      const formSet = new Set(forms);
+      const wiredFormSet = new Set(forms.filter((form) => hasRegisteredType(form, ["submit"])));
+      const allActions = Array.from(document.querySelectorAll(
+        'button, input[type="button"], input[type="submit"], input[type="reset"], input[type="image"], [role="button"]'
+      )).filter((element) => !isNativeLink(element)).slice(0, metricLimit);
+      const allActionSet = new Set(allActions);
+      const advertisedActionElements = allActions.filter((element) => {
+        const form = owningForm(element);
+        return !(form && isSubmitAction(element) && wiredFormSet.has(form));
+      });
+      const directActionEventList = Array.from(directActionEvents);
+      const wiredActions = advertisedActionElements.filter((element) =>
+        hasRegisteredType(element, directActionEventList)
+      ).length;
+      const interactions = [...advertisedActionElements, ...forms];
+      let delegatedActionListeners = 0;
+
+      for (const registration of registrations) {
+        const isDirectForm = registration.type === "submit" && formSet.has(registration.target);
+        const isDirectAction = directActionEvents.has(registration.type) && allActionSet.has(registration.target);
+        if (!isDirectForm && !isDirectAction && containsInteraction(registration.target, interactions)) {
+          delegatedActionListeners += 1;
+          if (delegatedActionListeners >= metricLimit) break;
+        }
+      }
+
+      const advertisedActions = advertisedActionElements.length;
+      const advertisedForms = forms.length;
+      const wiredForms = wiredFormSet.size;
+      const fullDirectCoverage =
+        wiredActions === advertisedActions && wiredForms === advertisedForms;
+      const interactionCoverage =
+        advertisedActions + advertisedForms === 0
+          ? delegatedActionListeners === 0 ? "none" : "unknown"
+          : fullDirectCoverage
+            ? "complete"
+            : delegatedActionListeners > 0 ? "unknown" : "incomplete";
+
+      return {
+        advertisedActions,
+        wiredActions,
+        advertisedForms,
+        wiredForms,
+        delegatedActionListeners,
+        interactionCoverage,
+      };
+    };
+
     const measure = () => {
+      const resumeObservation = observingRegistrations;
+      observingRegistrations = false;
       try {
         const body = document.body;
         const bodyText = typeof body?.innerText === "string" ? body.innerText.trim() : "";
@@ -73,10 +220,23 @@ export function createPreviewHealthRuntime(sessionId: string): string {
           hasMeaningfulContent: Boolean(bodyText || hasVisualElement),
           interactiveControls: count(document.querySelectorAll("button, input, select, textarea, a[href], [role=\\\"button\\\"]")),
           forms: count(document.querySelectorAll("form")),
+          ...measureInteractions(),
         };
       } catch (error) {
         addIssue({ message: error });
-        return { hasMeaningfulContent: false, interactiveControls: 0, forms: 0 };
+        return {
+          hasMeaningfulContent: false,
+          interactiveControls: 0,
+          forms: 0,
+          advertisedActions: 0,
+          wiredActions: 0,
+          advertisedForms: 0,
+          wiredForms: 0,
+          delegatedActionListeners: 0,
+          interactionCoverage: "none",
+        };
+      } finally {
+        observingRegistrations = resumeObservation;
       }
     };
 
@@ -90,6 +250,12 @@ export function createPreviewHealthRuntime(sessionId: string): string {
           hasMeaningfulContent: metrics.hasMeaningfulContent,
           interactiveControls: metrics.interactiveControls,
           forms: metrics.forms,
+          advertisedActions: metrics.advertisedActions,
+          wiredActions: metrics.wiredActions,
+          advertisedForms: metrics.advertisedForms,
+          wiredForms: metrics.wiredForms,
+          delegatedActionListeners: metrics.delegatedActionListeners,
+          interactionCoverage: metrics.interactionCoverage,
           issues: status === "issues" ? issues.slice(0, issueLimit) : [],
           reportedAt: Date.now(),
         }, "*");
@@ -115,6 +281,15 @@ export function createPreviewHealthRuntime(sessionId: string): string {
         const metrics = measure();
         if (!metrics.hasMeaningfulContent) {
           addIssue({ message: "Preview did not render meaningful content" });
+        }
+        if (metrics.interactionCoverage === "incomplete") {
+          const missingActions = metrics.advertisedActions - metrics.wiredActions;
+          const missingForms = metrics.advertisedForms - metrics.wiredForms;
+          addRequiredIssue({
+            message: "Preview interaction wiring is incomplete: " +
+              missingActions + " action(s) and " + missingForms +
+              " form(s) lack direct event listeners",
+          });
         }
         settled = true;
         report(issues.length > 0 ? "issues" : "healthy", metrics);

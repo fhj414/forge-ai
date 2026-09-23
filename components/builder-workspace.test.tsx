@@ -670,12 +670,18 @@ function previewSessionFrom(frame: HTMLIFrameElement): string {
 function issueReportFor(frame: HTMLIFrameElement): PreviewHealthReport {
   return {
     channel: "forge:preview-health",
-    version: 1,
+    version: 2,
     sessionId: previewSessionFrom(frame),
     status: "issues",
     hasMeaningfulContent: true,
     interactiveControls: 1,
     forms: 0,
+    advertisedActions: 1,
+    wiredActions: 1,
+    advertisedForms: 0,
+    wiredForms: 0,
+    delegatedActionListeners: 0,
+    interactionCoverage: "complete",
     issues: [
       {
         message: "Chart is not a constructor",
