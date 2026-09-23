@@ -21,6 +21,11 @@ export interface GeneratedAppQualityResult {
   correctiveMessage: string;
 }
 
+const BROWSER_NETWORK_API_PATTERNS = [
+  /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\s*(?:\.|\()/i,
+  /\bnavigator\s*\.\s*sendBeacon\s*\(/i,
+];
+
 function hasActionableInput(html: string) {
   return [...html.matchAll(/<input\b([^>]*)>/gi)].some((match) => {
     const attributes = match[1] ?? "";
@@ -44,12 +49,83 @@ function hasJavaScriptSyntaxError(javascript: string) {
   }
 }
 
+function maskNonCode(source: string) {
+  return source.replace(/[^\r\n]/g, " ");
+}
+
+function codeWithoutStringsAndComments(javascript: string) {
+  let code = "";
+  let index = 0;
+
+  while (index < javascript.length) {
+    const character = javascript[index];
+    const nextCharacter = javascript[index + 1];
+
+    if (character === '"' || character === "'" || character === "`") {
+      const quote = character;
+      const start = index;
+      index += 1;
+
+      while (index < javascript.length) {
+        if (javascript[index] === "\\") {
+          index += 2;
+          continue;
+        }
+
+        if (javascript[index] === quote) {
+          index += 1;
+          break;
+        }
+
+        index += 1;
+      }
+
+      code += maskNonCode(javascript.slice(start, index));
+      continue;
+    }
+
+    if (character === "/" && nextCharacter === "/") {
+      const start = index;
+      index += 2;
+      while (index < javascript.length && javascript[index] !== "\n") {
+        index += 1;
+      }
+      code += maskNonCode(javascript.slice(start, index));
+      continue;
+    }
+
+    if (character === "/" && nextCharacter === "*") {
+      const start = index;
+      index += 2;
+      while (
+        index < javascript.length &&
+        !(javascript[index] === "*" && javascript[index + 1] === "/")
+      ) {
+        index += 1;
+      }
+      index = Math.min(index + 2, javascript.length);
+      code += maskNonCode(javascript.slice(start, index));
+      continue;
+    }
+
+    code += character;
+    index += 1;
+  }
+
+  return code;
+}
+
+function usesBrowserNetworkApi(javascript: string) {
+  return BROWSER_NETWORK_API_PATTERNS.some((pattern) => pattern.test(javascript));
+}
+
 export function validateGeneratedAppQuality(
   app: GeneratedApp,
 ): GeneratedAppQualityResult {
   const violationCodes: GeneratedAppQualityViolationCode[] = [];
   const { html, javascript } = app;
   const hasInteractiveContent = hasActionableHtml(html);
+  const executableJavascript = codeWithoutStringsAndComments(javascript);
 
   if (/<\s*\/?\s*(?:html|head|body)\b/i.test(html)) {
     violationCodes.push("HTML_DOCUMENT_WRAPPER");
@@ -63,7 +139,7 @@ export function validateGeneratedAppQuality(
     violationCodes.push("HTML_STYLE_WRAPPER");
   }
 
-  if (/<[^>]*\s+on[a-z][\w:-]*\s*=/i.test(html)) {
+  if (/<[^>]*(?:\s|\/)on[a-z][\w:-]*\s*=/i.test(html)) {
     violationCodes.push("HTML_INLINE_EVENT_HANDLER");
   }
 
@@ -74,7 +150,7 @@ export function validateGeneratedAppQuality(
   if (
     hasInteractiveContent &&
     javascript.trim().length > 0 &&
-    !/\baddEventListener\s*\(/.test(javascript)
+    !/\baddEventListener\s*\(/.test(executableJavascript)
   ) {
     violationCodes.push("ACTIONABLE_HTML_REQUIRES_EVENT_LISTENER");
   }
@@ -83,7 +159,7 @@ export function validateGeneratedAppQuality(
     violationCodes.push("JAVASCRIPT_SYNTAX_ERROR");
   }
 
-  if (/\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\s*(?:\.|\()/i.test(javascript)) {
+  if (usesBrowserNetworkApi(executableJavascript)) {
     violationCodes.push("JAVASCRIPT_NETWORK_API");
   }
 

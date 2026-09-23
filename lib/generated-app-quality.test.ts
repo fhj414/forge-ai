@@ -80,4 +80,54 @@ describe("validateGeneratedAppQuality", () => {
       correctiveMessage: "",
     });
   });
+
+  it("does not count listener text in strings or comments as interactive wiring", async () => {
+    const quality = (await import("@/lib/generated-app-quality").catch(
+      () => undefined,
+    )) as QualityModule | undefined;
+
+    expect(quality).toBeDefined();
+    if (!quality) return;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        html: "<main><button>Save</button></main>",
+        javascript:
+          'const note = "addEventListener("; // addEventListener( is only documentation',
+      }).violationCodes,
+    ).toContain("ACTIONABLE_HTML_REQUIRES_EVENT_LISTENER");
+  });
+
+  it("rejects slash-prefixed inline event handlers", async () => {
+    const quality = (await import("@/lib/generated-app-quality").catch(
+      () => undefined,
+    )) as QualityModule | undefined;
+
+    expect(quality).toBeDefined();
+    if (!quality) return;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        html: "<svg/onload=alert(1)></svg>",
+      }).violationCodes,
+    ).toContain("HTML_INLINE_EVENT_HANDLER");
+  });
+
+  it("rejects navigator.sendBeacon as a browser network API", async () => {
+    const quality = (await import("@/lib/generated-app-quality").catch(
+      () => undefined,
+    )) as QualityModule | undefined;
+
+    expect(quality).toBeDefined();
+    if (!quality) return;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        javascript: 'navigator.sendBeacon("/collect", "data");',
+      }).violationCodes,
+    ).toContain("JAVASCRIPT_NETWORK_API");
+  });
 });
