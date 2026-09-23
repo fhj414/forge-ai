@@ -65,7 +65,31 @@ describe("PreviewPanel", () => {
 
     dispatchHealthMessage(frame, reportFor(frame, { status: "healthy" }));
 
-    expect(screen.getByText("Preview healthy")).toBeInTheDocument();
+    expect(screen.getByText("Runtime check passed")).toBeInTheDocument();
+  });
+
+  it("does not show a passed runtime headline for inert advertised controls", () => {
+    render(<PreviewPanel project={project} />);
+    const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
+
+    dispatchHealthMessage(
+      frame,
+      reportFor(frame, {
+        status: "issues",
+        interactiveControls: 1,
+        forms: 0,
+        advertisedActions: 1,
+        wiredActions: 0,
+        advertisedForms: 0,
+        wiredForms: 0,
+        interactionCoverage: "incomplete",
+        issues: [{ message: "1 interactive control appears inert" }],
+      }),
+    );
+
+    expect(screen.getByText("1 preview issue detected")).toBeInTheDocument();
+    expect(screen.getByText("Interaction wiring: 0/1 detected")).toBeInTheDocument();
+    expect(screen.queryByText("Runtime check passed")).not.toBeInTheDocument();
   });
 
   it("ignores a report from a different window", () => {
@@ -110,6 +134,7 @@ describe("PreviewPanel", () => {
     const secondFrame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
 
     expect(screen.getByText("Checking preview…")).toBeInTheDocument();
+    expect(screen.queryByText(/Interaction wiring:/)).not.toBeInTheDocument();
     expect(sessionFrom(secondFrame)).not.toBe(firstSession);
   });
 
@@ -137,8 +162,20 @@ describe("PreviewPanel", () => {
 
     const secondFrame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
     expect(screen.getByText("Checking preview…")).toBeInTheDocument();
+    expect(screen.queryByText(/Interaction wiring:/)).not.toBeInTheDocument();
     expect(secondFrame).not.toBe(firstFrame);
     expect(sessionFrom(secondFrame)).not.toBe(firstSession);
+  });
+
+  it("resets health and interaction coverage when the preview iframe reloads", () => {
+    render(<PreviewPanel project={project} />);
+    const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
+    dispatchHealthMessage(frame, reportFor(frame, { status: "healthy" }));
+
+    fireEvent.load(frame);
+
+    expect(screen.getByText("Checking preview…")).toBeInTheDocument();
+    expect(screen.queryByText(/Interaction wiring:/)).not.toBeInTheDocument();
   });
 });
 

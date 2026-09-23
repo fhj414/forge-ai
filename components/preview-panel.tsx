@@ -214,6 +214,7 @@ export function PreviewPanel({
                   title="Generated app preview"
                   sandbox="allow-scripts allow-forms"
                   srcDoc={srcDoc}
+                  onLoad={() => setHealthState(checkingState(sessionId))}
                 />
               </div>
             </div>

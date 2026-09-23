@@ -44,19 +44,65 @@ describe("PreviewHealth", () => {
     );
   });
 
-  it("shows healthy preview facts without offering repair", () => {
+  it("reports a passed runtime check separately from complete interaction wiring", () => {
     render(<PreviewHealth state={report()} />);
 
-    expect(screen.getByText("Preview healthy")).toBeInTheDocument();
+    expect(screen.getByText("Runtime check passed")).toBeInTheDocument();
+    expect(
+      screen.getByText("Interaction wiring: 3/3 detected"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Rendered content: yes")).toBeInTheDocument();
-    expect(screen.getByText("Controls: 3")).toBeInTheDocument();
-    expect(screen.getByText("Forms: 1")).toBeInTheDocument();
+    expect(screen.getByText("Controls found: 3")).toBeInTheDocument();
+    expect(screen.getByText("Forms found: 1")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Ask AI to fix" }),
     ).not.toBeInTheDocument();
   });
 
-  it("shows bounded issues and requests one repair", () => {
+  it("labels delegated or indirect interaction wiring as needing manual verification", () => {
+    render(
+      <PreviewHealth
+        state={report({
+          advertisedActions: 2,
+          wiredActions: 0,
+          advertisedForms: 1,
+          wiredForms: 0,
+          delegatedActionListeners: 1,
+          interactionCoverage: "unknown",
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Runtime check passed")).toBeInTheDocument();
+    expect(
+      screen.getByText("Interaction wiring: Manual verification needed"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Ask AI to fix" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reports that a static preview has no app actions", () => {
+    render(
+      <PreviewHealth
+        state={report({
+          interactiveControls: 0,
+          forms: 0,
+          advertisedActions: 0,
+          wiredActions: 0,
+          advertisedForms: 0,
+          wiredForms: 0,
+          interactionCoverage: "none",
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText("Interaction wiring: No app actions detected"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps concretely incomplete interaction wiring eligible for repair", () => {
     const onRepair = vi.fn();
     render(
       <PreviewHealth
@@ -66,6 +112,11 @@ describe("PreviewHealth", () => {
             { message: "Cannot read properties of null" },
             { message: "Failed to load chart" },
           ],
+          advertisedActions: 2,
+          wiredActions: 1,
+          advertisedForms: 1,
+          wiredForms: 0,
+          interactionCoverage: "incomplete",
         })}
         onRepair={onRepair}
       />,
@@ -74,9 +125,12 @@ describe("PreviewHealth", () => {
     expect(screen.getByText("2 preview issues detected")).toBeInTheDocument();
     expect(screen.getByText("Cannot read properties of null")).toBeInTheDocument();
     expect(screen.getByText("Failed to load chart")).toBeInTheDocument();
+    expect(
+      screen.getByText("Interaction wiring: 1/3 detected"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Rendered content: yes")).toBeInTheDocument();
-    expect(screen.getByText("Controls: 3")).toBeInTheDocument();
-    expect(screen.getByText("Forms: 1")).toBeInTheDocument();
+    expect(screen.getByText("Controls found: 3")).toBeInTheDocument();
+    expect(screen.getByText("Forms found: 1")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Ask AI to fix" }));
 

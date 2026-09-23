@@ -86,7 +86,7 @@ function BuildSummaryCard({ summary }: { summary: BuildSummary }) {
           <Layers3 size={13} /> {summary.components} components created
         </span>
         <span>
-          <MousePointer2 size={13} /> {summary.interactions} interactions added
+          <MousePointer2 size={13} /> {summary.interactions} interactive elements found
         </span>
         <span>
           <Smartphone size={13} />

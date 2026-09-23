@@ -31,6 +31,25 @@ const legacyBuildSummary: BuildSummary = {
 };
 
 describe("ChatPanel", () => {
+  it("labels markup-derived interaction counts as found elements", () => {
+    render(
+      <ChatPanel
+        project={legacyProject}
+        pendingPrompt=""
+        phase="idle"
+        buildSummary={{ ...legacyBuildSummary, interactions: 3 }}
+        examples={[]}
+        disabled={false}
+        onExample={vi.fn()}
+        onRetry={vi.fn()}
+        onSuggestion={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("3 interactive elements found")).toBeInTheDocument();
+    expect(screen.queryByText("3 interactions added")).not.toBeInTheDocument();
+  });
+
   it("omits metadata rows and badges for a legacy project without metadata", () => {
     render(
       <ChatPanel

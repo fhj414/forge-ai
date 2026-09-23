@@ -37,7 +37,7 @@ export function PreviewHealth({
   if (state.status === "healthy") {
     return (
       <section className="preview-health" data-status="healthy" aria-label="Preview health" aria-live="polite">
-        <p className="preview-health-status">Preview healthy</p>
+        <p className="preview-health-status">Runtime check passed</p>
         <PreviewHealthFacts report={state} />
       </section>
     );
@@ -80,8 +80,18 @@ function PreviewHealthFacts({ report }: { report: PreviewHealthReport }) {
   return (
     <ul className="preview-health-facts" aria-label="Preview health facts">
       <li>Rendered content: {report.hasMeaningfulContent ? "yes" : "no"}</li>
-      <li>Controls: {report.interactiveControls}</li>
-      <li>Forms: {report.forms}</li>
+      <li>Interaction wiring: {interactionWiring(report)}</li>
+      <li>Controls found: {report.interactiveControls}</li>
+      <li>Forms found: {report.forms}</li>
     </ul>
   );
+}
+
+function interactionWiring(report: PreviewHealthReport) {
+  if (report.interactionCoverage === "unknown") return "Manual verification needed";
+  if (report.interactionCoverage === "none") return "No app actions detected";
+
+  const wired = report.wiredActions + report.wiredForms;
+  const advertised = report.advertisedActions + report.advertisedForms;
+  return `${wired}/${advertised} detected`;
 }
