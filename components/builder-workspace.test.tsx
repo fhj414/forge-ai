@@ -618,6 +618,7 @@ describe("BuilderWorkspace", () => {
     render(<BuilderWorkspace />);
 
     await screen.findByText("A focused task manager.");
+    await act(async () => {});
     const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
     dispatchHealthMessage(frame, issueReportFor(frame));
     expect(screen.getByRole("button", { name: "Ask AI to fix" })).toBeEnabled();

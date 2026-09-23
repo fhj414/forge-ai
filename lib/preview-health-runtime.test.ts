@@ -312,6 +312,178 @@ describe("createPreviewHealthRuntime", () => {
     });
   });
 
+  it("treats an action listener as delegation evidence for a nested advertised action", () => {
+    const harness = runDomRuntime(
+      '<div id="parent" role="button">Parent <button id="child">Child</button></div>',
+      (window) => {
+        window.document.querySelector("#parent")?.addEventListener("click", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "healthy",
+      advertisedActions: 2,
+      wiredActions: 1,
+      delegatedActionListeners: 1,
+      interactionCoverage: "unknown",
+      issues: [],
+    });
+  });
+
+  it("tracks removal, once, abort, duplicate, listener-object, and capture semantics", () => {
+    let removedCalls = 0;
+    let abortedCalls = 0;
+    let onceCalls = 0;
+    let duplicateCalls = 0;
+    let captureCalls = 0;
+    let objectCalls = 0;
+    let objectThisMatches = false;
+    const harness = runDomRuntime(
+      [
+        '<button id="removed">Removed</button>',
+        '<button id="aborted">Aborted</button>',
+        '<button id="once">Once</button>',
+        '<button id="duplicate">Duplicate</button>',
+        '<button id="capture">Capture</button>',
+        '<button id="object">Object</button>',
+        '<button id="inactive-object">Inactive object</button>',
+      ].join(""),
+      (window) => {
+        const removed = window.document.querySelector("#removed")!;
+        const removedListener = () => {
+          removedCalls += 1;
+        };
+        removed.addEventListener("click", removedListener);
+        removed.removeEventListener("click", removedListener);
+        removed.dispatchEvent(new window.MouseEvent("click"));
+
+        const aborted = window.document.querySelector("#aborted")!;
+        const abortController = new window.AbortController();
+        aborted.addEventListener("click", () => {
+          abortedCalls += 1;
+        }, { signal: abortController.signal });
+        abortController.abort();
+        aborted.dispatchEvent(new window.MouseEvent("click"));
+
+        const once = window.document.querySelector("#once")!;
+        once.addEventListener("click", () => {
+          onceCalls += 1;
+        }, { once: true });
+        once.dispatchEvent(new window.MouseEvent("click"));
+        once.dispatchEvent(new window.MouseEvent("click"));
+
+        const duplicate = window.document.querySelector("#duplicate")!;
+        const duplicateListener = () => {
+          duplicateCalls += 1;
+        };
+        duplicate.addEventListener("click", duplicateListener);
+        duplicate.addEventListener("click", duplicateListener);
+        duplicate.removeEventListener("click", duplicateListener);
+        duplicate.dispatchEvent(new window.MouseEvent("click"));
+
+        const capture = window.document.querySelector("#capture")!;
+        const captureListener = () => {
+          captureCalls += 1;
+        };
+        capture.addEventListener("click", captureListener);
+        capture.addEventListener("click", captureListener, true);
+        capture.removeEventListener("click", captureListener);
+        capture.dispatchEvent(new window.MouseEvent("click"));
+
+        const object = window.document.querySelector("#object")!;
+        const listenerObject = {
+          handleEvent() {
+            objectCalls += 1;
+            objectThisMatches = this === listenerObject;
+          },
+        };
+        object.addEventListener("click", listenerObject);
+        object.dispatchEvent(new window.MouseEvent("click"));
+
+        const inactiveObject = window.document.querySelector("#inactive-object")!;
+        const inactiveListener: { handleEvent: (() => void) | null } = {
+          handleEvent: () => {},
+        };
+        inactiveObject.addEventListener("click", inactiveListener);
+        inactiveListener.handleEvent = null;
+      },
+    );
+
+    expect({
+      removedCalls,
+      abortedCalls,
+      onceCalls,
+      duplicateCalls,
+      captureCalls,
+      objectCalls,
+      objectThisMatches,
+    }).toEqual({
+      removedCalls: 0,
+      abortedCalls: 0,
+      onceCalls: 1,
+      duplicateCalls: 0,
+      captureCalls: 1,
+      objectCalls: 1,
+      objectThisMatches: true,
+    });
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 7,
+      wiredActions: 2,
+      delegatedActionListeners: 0,
+      interactionCoverage: "incomplete",
+    });
+  });
+
+  it("does not treat input or change listeners as button activation evidence", () => {
+    const harness = runDomRuntime(
+      '<div id="container"><button id="save">Save</button></div>',
+      (window) => {
+        window.document.querySelector("#save")?.addEventListener("input", () => {});
+        window.document.querySelector("#container")?.addEventListener("change", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 1,
+      wiredActions: 0,
+      delegatedActionListeners: 0,
+      interactionCoverage: "incomplete",
+    });
+  });
+
+  it("does not keep inactive delegated listeners as unknown-coverage evidence", () => {
+    let onceCalls = 0;
+    const harness = runDomRuntime('<button id="save">Save</button>', (window) => {
+      const removedListener = () => {};
+      window.document.addEventListener("click", removedListener);
+      window.document.removeEventListener("click", removedListener);
+
+      const abortController = new window.AbortController();
+      window.document.addEventListener("click", () => {}, {
+        signal: abortController.signal,
+      });
+      abortController.abort();
+
+      window.document.addEventListener("click", () => {
+        onceCalls += 1;
+      }, { once: true });
+      window.document.querySelector("#save")?.dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }),
+      );
+    });
+
+    expect(onceCalls).toBe(1);
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 1,
+      wiredActions: 0,
+      delegatedActionListeners: 0,
+      interactionCoverage: "incomplete",
+    });
+  });
+
   it("does not credit guarded registration against a selector that matches nothing", () => {
     const harness = runDomRuntime('<button id="save">Save</button>', (window) => {
       window.document.querySelector("#missing")?.addEventListener("click", () => {});
@@ -429,7 +601,7 @@ describe("createPreviewHealthRuntime", () => {
 
   it("preserves interaction evidence when reporting a late runtime error", () => {
     const harness = runDomRuntime('<button id="save">Save</button>', (window) => {
-      window.document.querySelector("#save")?.addEventListener("change", () => {});
+      window.document.querySelector("#save")?.addEventListener("click", () => {});
     });
 
     harness.dom.window.dispatchEvent(

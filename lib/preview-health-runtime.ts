@@ -18,9 +18,9 @@ export function createPreviewHealthRuntime(sessionId: string): string {
     const issueLimit = 5;
     const metricLimit = 10000;
     const registrationLimit = 10000;
-    const directActionEvents = new Set(["click", "input", "change", "keydown", "keypress", "keyup"]);
-    const observedInteractionEvents = new Set([...directActionEvents, "submit"]);
-    const registeredTypes = new WeakMap();
+    const activationEvents = new Set(["click", "keydown", "keypress", "keyup"]);
+    const observedInteractionEvents = new Set([...activationEvents, "input", "change", "submit"]);
+    const registrationsByTarget = new WeakMap();
     const registrations = [];
     let observingRegistrations = true;
     let settled = false;
@@ -54,36 +54,164 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       return Math.min(metricLimit, length === undefined ? 0 : length);
     };
 
-    const rememberRegistration = (target, type, listener) => {
+    const isCallableListener = (listener) => {
       try {
-        if (!observingRegistrations) return;
-        const isCallableListener = typeof listener === "function" ||
+        return typeof listener === "function" ||
           Boolean(listener && typeof listener.handleEvent === "function");
-        if (!isCallableListener) return;
-        const normalizedType = typeof type === "string" ? type : "";
-        if (!observedInteractionEvents.has(normalizedType)) return;
-        let types = registeredTypes.get(target);
-        if (!types) {
-          types = new Set();
-          registeredTypes.set(target, types);
-        }
-        types.add(normalizedType);
-        if (registrations.length < registrationLimit) {
-          registrations.push({ target, type: normalizedType });
+      } catch (error) {
+        return false;
+      }
+    };
+
+    const isListenerIdentity = (listener) =>
+      typeof listener === "function" || Boolean(listener && typeof listener === "object");
+
+    const captureFrom = (options) => {
+      if (typeof options === "boolean") return options;
+      return Boolean(options && options.capture);
+    };
+
+    const recordsFor = (target) => {
+      let records = registrationsByTarget.get(target);
+      if (!records) {
+        records = [];
+        registrationsByTarget.set(target, records);
+      }
+      return records;
+    };
+
+    const findRegistration = (target, type, listener, capture) => {
+      try {
+        return registrationsByTarget.get(target)?.find((registration) =>
+          registration.active &&
+          registration.type === type &&
+          registration.listener === listener &&
+          registration.capture === capture
+        );
+      } catch (error) {
+        return undefined;
+      }
+    };
+
+    let originalAddEventListener;
+    let originalRemoveEventListener;
+
+    const deactivateRegistration = (registration) => {
+      try {
+        if (!registration?.active) return;
+        registration.active = false;
+        const targetRecords = registrationsByTarget.get(registration.target);
+        const targetIndex = targetRecords?.indexOf(registration) ?? -1;
+        if (targetIndex >= 0) targetRecords.splice(targetIndex, 1);
+        const registrationIndex = registrations.indexOf(registration);
+        if (registrationIndex >= 0) registrations.splice(registrationIndex, 1);
+        if (registration.signal && registration.abortCleanup && originalRemoveEventListener) {
+          originalRemoveEventListener.call(
+            registration.signal,
+            "abort",
+            registration.abortCleanup,
+          );
         }
       } catch (error) {}
     };
 
     try {
       const eventTargetPrototype = window.EventTarget?.prototype;
-      const originalAddEventListener = eventTargetPrototype?.addEventListener;
-      if (typeof originalAddEventListener === "function") {
+      originalAddEventListener = eventTargetPrototype?.addEventListener;
+      originalRemoveEventListener = eventTargetPrototype?.removeEventListener;
+      if (
+        typeof originalAddEventListener === "function" &&
+        typeof originalRemoveEventListener === "function"
+      ) {
         Object.defineProperty(eventTargetPrototype, "addEventListener", {
           configurable: true,
           writable: true,
           value: function(type, listener, options) {
-            const result = originalAddEventListener.call(this, type, listener, options);
-            rememberRegistration(this, type, listener);
+            const normalizedType = typeof type === "string" ? type : "";
+            if (
+              !observingRegistrations ||
+              !observedInteractionEvents.has(normalizedType) ||
+              !isListenerIdentity(listener)
+            ) {
+              return originalAddEventListener.call(this, type, listener, options);
+            }
+
+            const capture = captureFrom(options);
+            const existing = findRegistration(this, normalizedType, listener, capture);
+            if (existing) {
+              return originalAddEventListener.call(this, type, existing.wrapper, options);
+            }
+            if (registrations.length >= registrationLimit) {
+              return originalAddEventListener.call(this, type, listener, options);
+            }
+
+            const once = Boolean(options && typeof options === "object" && options.once);
+            const signal = options && typeof options === "object" ? options.signal : undefined;
+            const registration = {
+              target: this,
+              type: normalizedType,
+              listener,
+              capture,
+              once,
+              signal,
+              abortCleanup: undefined,
+              active: false,
+              wrapper: undefined,
+            };
+            registration.wrapper = function(event) {
+              if (registration.once) deactivateRegistration(registration);
+              if (typeof registration.listener === "function") {
+                return registration.listener.call(this, event);
+              }
+              const handleEvent = registration.listener?.handleEvent;
+              if (typeof handleEvent === "function") {
+                return handleEvent.call(registration.listener, event);
+              }
+            };
+
+            const result = originalAddEventListener.call(this, type, registration.wrapper, options);
+            if (signal?.aborted) return result;
+
+            registration.active = true;
+            recordsFor(this).push(registration);
+            registrations.push(registration);
+            if (signal && typeof signal.addEventListener === "function") {
+              registration.abortCleanup = () => deactivateRegistration(registration);
+              originalAddEventListener.call(
+                signal,
+                "abort",
+                registration.abortCleanup,
+                { once: true },
+              );
+            }
+            return result;
+          },
+        });
+        Object.defineProperty(eventTargetPrototype, "removeEventListener", {
+          configurable: true,
+          writable: true,
+          value: function(type, listener, options) {
+            const normalizedType = typeof type === "string" ? type : "";
+            if (!observedInteractionEvents.has(normalizedType) || !isListenerIdentity(listener)) {
+              return originalRemoveEventListener.call(this, type, listener, options);
+            }
+            const capture = captureFrom(options);
+            const registration = findRegistration(
+              this,
+              normalizedType,
+              listener,
+              capture,
+            );
+            if (!registration) {
+              return originalRemoveEventListener.call(this, type, listener, options);
+            }
+            const result = originalRemoveEventListener.call(
+              this,
+              type,
+              registration.wrapper,
+              options,
+            );
+            deactivateRegistration(registration);
             return result;
           },
         });
@@ -115,8 +243,12 @@ export function createPreviewHealthRuntime(sessionId: string): string {
 
     const hasRegisteredType = (target, types) => {
       try {
-        const targetTypes = registeredTypes.get(target);
-        return Boolean(targetTypes && types.some((type) => targetTypes.has(type)));
+        const expectedTypes = new Set(types);
+        return Boolean(registrationsByTarget.get(target)?.some((registration) =>
+          registration.active &&
+          isCallableListener(registration.listener) &&
+          expectedTypes.has(registration.type)
+        ));
       } catch (error) {
         return false;
       }
@@ -149,9 +281,9 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       }
     };
 
-    const containsInteraction = (target, interactions) => {
+    const containsDescendant = (target, interactions) => {
       try {
-        if (target === window || target === document) return true;
+        if (target === window || target === document) return interactions.length > 0;
         return typeof target?.contains === "function" &&
           interactions.some((interaction) => interaction !== target && target.contains(interaction));
       } catch (error) {
@@ -161,27 +293,27 @@ export function createPreviewHealthRuntime(sessionId: string): string {
 
     const measureInteractions = () => {
       const forms = Array.from(document.querySelectorAll("form")).slice(0, metricLimit);
-      const formSet = new Set(forms);
       const wiredFormSet = new Set(forms.filter((form) => hasRegisteredType(form, ["submit"])));
       const allActions = Array.from(document.querySelectorAll(
         'button, input[type="button"], input[type="submit"], input[type="reset"], input[type="image"], [role="button"]'
       )).filter((element) => !isNativeLink(element)).slice(0, metricLimit);
-      const allActionSet = new Set(allActions);
       const advertisedActionElements = allActions.filter((element) => {
         const form = owningForm(element);
         return !(form && isSubmitAction(element) && wiredFormSet.has(form));
       });
-      const directActionEventList = Array.from(directActionEvents);
+      const activationEventList = Array.from(activationEvents);
       const wiredActions = advertisedActionElements.filter((element) =>
-        hasRegisteredType(element, directActionEventList)
+        hasRegisteredType(element, activationEventList)
       ).length;
-      const interactions = [...advertisedActionElements, ...forms];
       let delegatedActionListeners = 0;
 
       for (const registration of registrations) {
-        const isDirectForm = registration.type === "submit" && formSet.has(registration.target);
-        const isDirectAction = directActionEvents.has(registration.type) && allActionSet.has(registration.target);
-        if (!isDirectForm && !isDirectAction && containsInteraction(registration.target, interactions)) {
+        if (!isCallableListener(registration.listener)) continue;
+        const delegatesToAction = activationEvents.has(registration.type) &&
+          containsDescendant(registration.target, advertisedActionElements);
+        const delegatesToForm = registration.type === "submit" &&
+          containsDescendant(registration.target, forms);
+        if (delegatesToAction || delegatesToForm) {
           delegatedActionListeners += 1;
           if (delegatedActionListeners >= metricLimit) break;
         }
