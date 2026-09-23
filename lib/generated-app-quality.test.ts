@@ -159,6 +159,61 @@ describe("validateGeneratedAppQuality", () => {
   });
 
   it.each([
+    [
+      "computed fetch from window",
+      "const { ['fetch']: f } = window; f('/api');",
+      "JAVASCRIPT_NETWORK_API",
+    ],
+    [
+      "computed sendBeacon from navigator",
+      "const { ['sendBeacon']: ping } = navigator; ping('/x');",
+      "JAVASCRIPT_NETWORK_API",
+    ],
+    [
+      "static write from document",
+      "const { write: emit } = document; emit('<p>x</p>');",
+      "JAVASCRIPT_DOCUMENT_WRITE",
+    ],
+    [
+      "template sendBeacon from navigator",
+      "const { [`sendBeacon`]: ping } = navigator; ping('/x');",
+      "JAVASCRIPT_NETWORK_API",
+    ],
+  ])("rejects %s", async (_label, javascript, violationCode) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({ ...staticApp, javascript })
+        .violationCodes,
+    ).toContain(violationCode);
+  });
+
+  it("rejects destructuring assignments from forbidden browser objects", async () => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        javascript: "({ fetch: request } = window); request('/api');",
+      }).violationCodes,
+    ).toContain("JAVASCRIPT_NETWORK_API");
+  });
+
+  it("ignores forbidden property names destructured from unrelated objects", async () => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        javascript: "const { fetch: request } = app; request('/api');",
+      }),
+    ).toEqual({
+      violationCodes: [],
+      correctiveMessage: "",
+    });
+  });
+
+  it.each([
     ["direct", "document.write;"],
     ["optional", "document?.write('<p>unsafe</p>');"],
     ["computed", "document['write']('<p>unsafe</p>');"],

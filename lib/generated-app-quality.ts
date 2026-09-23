@@ -85,21 +85,27 @@ function isAstNode(value: unknown): value is AstNode {
 
 function walkAst(
   node: AstNode,
-  visit: (node: AstNode, parent?: AstNode, parentKey?: string) => void,
+  visit: (
+    node: AstNode,
+    parent?: AstNode,
+    parentKey?: string,
+    grandparent?: AstNode,
+  ) => void,
   parent?: AstNode,
   parentKey?: string,
+  grandparent?: AstNode,
 ) {
-  visit(node, parent, parentKey);
+  visit(node, parent, parentKey, grandparent);
 
   for (const [key, value] of Object.entries(node)) {
     if (isAstNode(value)) {
-      walkAst(value, visit, node, key);
+      walkAst(value, visit, node, key, parent);
       continue;
     }
 
     if (!Array.isArray(value)) continue;
     for (const child of value) {
-      if (isAstNode(child)) walkAst(child, visit, node, key);
+      if (isAstNode(child)) walkAst(child, visit, node, key, parent);
     }
   }
 }
@@ -143,6 +149,50 @@ function staticPropertyName(member: AstNode): string | undefined {
   return undefined;
 }
 
+function staticPatternPropertyName(property: AstNode): string | undefined {
+  const key = unwrapChain(property.key);
+  if (!key) return undefined;
+
+  if (!property.computed && key.type === "Identifier") {
+    return typeof key.name === "string" ? key.name : undefined;
+  }
+
+  if (key.type === "Literal" && typeof key.value === "string") {
+    return key.value;
+  }
+
+  if (
+    property.computed &&
+    key.type === "TemplateLiteral" &&
+    Array.isArray(key.expressions) &&
+    key.expressions.length === 0 &&
+    Array.isArray(key.quasis)
+  ) {
+    const quasi = key.quasis[0];
+    if (isAstNode(quasi) && quasi.type === "TemplateElement") {
+      const cooked = (quasi.value as { cooked?: unknown } | undefined)?.cooked;
+      return typeof cooked === "string" ? cooked : undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function bindingIdentifier(node: unknown): string | undefined {
+  const unwrapped = unwrapChain(node);
+  if (!unwrapped) return undefined;
+
+  if (unwrapped.type === "Identifier" && typeof unwrapped.name === "string") {
+    return unwrapped.name;
+  }
+
+  if (unwrapped.type === "AssignmentPattern") {
+    return bindingIdentifier(unwrapped.left);
+  }
+
+  return undefined;
+}
+
 function staticMemberPath(node: unknown): string[] | undefined {
   const unwrapped = unwrapChain(node);
   if (!unwrapped) return undefined;
@@ -162,8 +212,17 @@ function staticMemberPath(node: unknown): string[] | undefined {
 function isReferenceIdentifier(
   parent: AstNode | undefined,
   parentKey: string | undefined,
+  grandparent: AstNode | undefined,
 ): boolean {
   if (!parent) return true;
+
+  if (
+    parent.type === "Property" &&
+    parentKey === "value" &&
+    grandparent?.type === "ObjectPattern"
+  ) {
+    return false;
+  }
 
   if (
     (parent.type === "VariableDeclarator" && parentKey === "id") ||
@@ -198,6 +257,8 @@ function analyzeJavaScript(program?: AstNode) {
   let usesBrowserNetworkApi = false;
   let usesModuleImport = false;
   let usesDocumentWrite = false;
+  const networkAliases = new Set<string>();
+  const documentWriteAliases = new Set<string>();
 
   if (!program) {
     return {
@@ -208,7 +269,50 @@ function analyzeJavaScript(program?: AstNode) {
     };
   }
 
-  walkAst(program, (node, parent, parentKey) => {
+  const registerDestructuredAliases = (pattern: unknown, source: unknown) => {
+    const unwrappedPattern = unwrapChain(pattern);
+    if (unwrappedPattern?.type !== "ObjectPattern") return;
+
+    const sourcePath = staticMemberPath(source);
+    if (!sourcePath) return;
+
+    const sourceProperty = sourcePath.at(-1);
+    const sourceIsGlobalObject =
+      sourcePath.length === 1 &&
+      GLOBAL_OBJECT_IDENTIFIERS.has(sourcePath[0] ?? "");
+
+    if (!Array.isArray(unwrappedPattern.properties)) return;
+    for (const property of unwrappedPattern.properties) {
+      if (!isAstNode(property) || property.type !== "Property") continue;
+
+      const propertyName = staticPatternPropertyName(property);
+      const aliasName = bindingIdentifier(property.value);
+      if (!propertyName || !aliasName) continue;
+
+      if (
+        (sourceIsGlobalObject && DIRECT_NETWORK_IDENTIFIERS.has(propertyName)) ||
+        (propertyName === "sendBeacon" && sourceProperty === "navigator")
+      ) {
+        networkAliases.add(aliasName);
+        usesBrowserNetworkApi = true;
+      }
+
+      if (propertyName === "write" && sourceProperty === "document") {
+        documentWriteAliases.add(aliasName);
+        usesDocumentWrite = true;
+      }
+    }
+  };
+
+  walkAst(program, (node, parent, parentKey, grandparent) => {
+    if (node.type === "VariableDeclarator") {
+      registerDestructuredAliases(node.id, node.init);
+    }
+
+    if (node.type === "AssignmentExpression") {
+      registerDestructuredAliases(node.left, node.right);
+    }
+
     if (node.type === "ImportDeclaration" || node.type === "ImportExpression") {
       usesModuleImport = true;
     }
@@ -227,10 +331,20 @@ function analyzeJavaScript(program?: AstNode) {
     if (
       node.type === "Identifier" &&
       typeof node.name === "string" &&
-      DIRECT_NETWORK_IDENTIFIERS.has(node.name) &&
-      isReferenceIdentifier(parent, parentKey)
+      isReferenceIdentifier(parent, parentKey, grandparent) &&
+      (DIRECT_NETWORK_IDENTIFIERS.has(node.name) ||
+        networkAliases.has(node.name))
     ) {
       usesBrowserNetworkApi = true;
+    }
+
+    if (
+      node.type === "Identifier" &&
+      typeof node.name === "string" &&
+      documentWriteAliases.has(node.name) &&
+      isReferenceIdentifier(parent, parentKey, grandparent)
+    ) {
+      usesDocumentWrite = true;
     }
 
     if (node.type !== "MemberExpression") return;
