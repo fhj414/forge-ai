@@ -237,13 +237,6 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       } catch (error) {}
     };
 
-    const addRequiredIssue = (value) => {
-      try {
-        if (issues.length >= issueLimit) issues.pop();
-        addIssue(value);
-      } catch (error) {}
-    };
-
     const hasRegisteredType = (target, types) => {
       try {
         const expectedTypes = new Set(types);
@@ -430,7 +423,7 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       }
     };
 
-    const report = (status, metrics) => {
+    const report = (status, metrics, reportedIssues = issues) => {
       try {
         window.parent?.postMessage({
           channel: configuration.channel,
@@ -446,9 +439,30 @@ export function createPreviewHealthRuntime(sessionId: string): string {
           wiredForms: metrics.wiredForms,
           delegatedActionListeners: metrics.delegatedActionListeners,
           interactionCoverage: metrics.interactionCoverage,
-          issues: status === "issues" ? issues.slice(0, issueLimit) : [],
+          issues: status === "issues" ? reportedIssues.slice(0, issueLimit) : [],
           reportedAt: Date.now(),
         }, "*");
+      } catch (error) {}
+    };
+
+    const reportFinal = () => {
+      try {
+        const metrics = measure();
+        const currentIssues = issues.slice(0, issueLimit);
+        if (!metrics.hasMeaningfulContent && currentIssues.length < issueLimit) {
+          currentIssues.push({ message: "Preview did not render meaningful content" });
+        }
+        if (metrics.interactionCoverage === "incomplete") {
+          const missingActions = metrics.advertisedActions - metrics.wiredActions;
+          const missingForms = metrics.advertisedForms - metrics.wiredForms;
+          if (currentIssues.length >= issueLimit) currentIssues.pop();
+          currentIssues.push({
+            message: "Preview interaction wiring is incomplete: " +
+              missingActions + " action(s) and " + missingForms +
+              " form(s) lack direct event listeners",
+          });
+        }
+        report(currentIssues.length > 0 ? "issues" : "healthy", metrics, currentIssues);
       } catch (error) {}
     };
 
@@ -456,7 +470,7 @@ export function createPreviewHealthRuntime(sessionId: string): string {
       const issueCount = issues.length;
       addIssue(event || {});
       if (settled && issues.length > issueCount) {
-        report("issues", measure());
+        reportFinal();
       }
     };
     const onError = (event) => onFailure(event);
@@ -466,7 +480,7 @@ export function createPreviewHealthRuntime(sessionId: string): string {
 
       const sendFinalReport = () => {
         if (!settled) return;
-        report(issues.length > 0 ? "issues" : "healthy", measure());
+        reportFinal();
       };
 
       try {
@@ -483,21 +497,8 @@ export function createPreviewHealthRuntime(sessionId: string): string {
 
     const finalize = () => {
       try {
-        const metrics = measure();
-        if (!metrics.hasMeaningfulContent) {
-          addIssue({ message: "Preview did not render meaningful content" });
-        }
-        if (metrics.interactionCoverage === "incomplete") {
-          const missingActions = metrics.advertisedActions - metrics.wiredActions;
-          const missingForms = metrics.advertisedForms - metrics.wiredForms;
-          addRequiredIssue({
-            message: "Preview interaction wiring is incomplete: " +
-              missingActions + " action(s) and " + missingForms +
-              " form(s) lack direct event listeners",
-          });
-        }
         settled = true;
-        report(issues.length > 0 ? "issues" : "healthy", metrics);
+        reportFinal();
       } catch (error) {}
     };
 

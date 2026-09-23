@@ -33,9 +33,57 @@ const DIRECT_NETWORK_IDENTIFIERS = new Set([
 ]);
 const GLOBAL_OBJECT_IDENTIFIERS = new Set(["window", "globalThis", "self"]);
 
-function hasActionableInput(html: string) {
-  return [...html.matchAll(/<input\b([^>]*)>/gi)].some((match) => {
-    const attributes = match[1] ?? "";
+interface ScannedHtmlTag {
+  name: string;
+  attributes: string;
+}
+
+function scanHtmlTags(html: string): ScannedHtmlTag[] {
+  const tags: ScannedHtmlTag[] = [];
+  let cursor = 0;
+
+  while (cursor < html.length) {
+    const tagStart = html.indexOf("<", cursor);
+    if (tagStart < 0) break;
+
+    let nameStart = tagStart + 1;
+    while (/\s/.test(html[nameStart] ?? "")) nameStart += 1;
+
+    const nameMatch = /^[a-z][\w:-]*/i.exec(html.slice(nameStart));
+    if (!nameMatch) {
+      cursor = tagStart + 1;
+      continue;
+    }
+
+    const attributesStart = nameStart + nameMatch[0].length;
+    let quote: '"' | "'" | undefined;
+    let tagEnd = attributesStart;
+    for (; tagEnd < html.length; tagEnd += 1) {
+      const character = html[tagEnd];
+      if (quote) {
+        if (character === quote) quote = undefined;
+      } else if (character === '"' || character === "'") {
+        quote = character;
+      } else if (character === ">") {
+        break;
+      }
+    }
+
+    if (tagEnd >= html.length) break;
+    tags.push({
+      name: nameMatch[0].toLowerCase(),
+      attributes: html.slice(attributesStart, tagEnd),
+    });
+    cursor = tagEnd + 1;
+  }
+
+  return tags;
+}
+
+function hasActionableInput(tags: ScannedHtmlTag[]) {
+  return tags.some((tag) => {
+    if (tag.name !== "input") return false;
+    const { attributes } = tag;
     return !(
       /\btype\s*=\s*(?:"hidden"|'hidden'|hidden\b)/i.test(attributes) ||
       /(?:^|\s)hidden(?:\s|=|$)/i.test(attributes)
@@ -43,8 +91,14 @@ function hasActionableInput(html: string) {
   });
 }
 
-function hasActionableHtml(html: string) {
-  return /<(?:button|form|select|textarea)\b/i.test(html) || hasActionableInput(html);
+function hasActionableHtml(html: string, tags: ScannedHtmlTag[]) {
+  return /<(?:button|form|select|textarea)\b/i.test(html) || hasActionableInput(tags);
+}
+
+function hasInlineEventHandler(tags: ScannedHtmlTag[]) {
+  return tags.some((tag) =>
+    /(?:^|\s|\/)on[a-z][\w:-]*\s*=/i.test(tag.attributes),
+  );
 }
 
 function parseClassicScript(javascript: string): {
@@ -270,6 +324,21 @@ function staticMemberPath(node: unknown): string[] | undefined {
     : undefined;
 }
 
+function isBrowserNetworkPath(path: string[]): boolean {
+  const last = path.at(-1);
+  const previous = path.at(-2);
+  return Boolean(
+    (last &&
+      DIRECT_NETWORK_IDENTIFIERS.has(last) &&
+      GLOBAL_OBJECT_IDENTIFIERS.has(path[0] ?? "")) ||
+      (last === "sendBeacon" && previous === "navigator"),
+  );
+}
+
+function isDocumentWritePath(path: string[]): boolean {
+  return path.at(-1) === "write" && path.at(-2) === "document";
+}
+
 function isReferenceIdentifier(
   parent: AstNode | undefined,
   parentKey: string | undefined,
@@ -323,6 +392,7 @@ function analyzeJavaScript(program?: AstNode) {
   let usesDocumentWrite = false;
   const networkAliases = new Set<string>();
   const documentWriteAliases = new Set<string>();
+  const destructuredBindings = new Set<string>();
 
   if (!program) {
     return {
@@ -333,39 +403,54 @@ function analyzeJavaScript(program?: AstNode) {
     };
   }
 
-  const registerDestructuredAliases = (pattern: unknown, source: unknown) => {
-    const unwrappedPattern = unwrapChain(pattern);
-    if (unwrappedPattern?.type !== "ObjectPattern") return;
+  const registerBindingPath = (value: unknown, sourcePath: string[]) => {
+    const unwrappedValue = unwrapChain(value);
+    if (!unwrappedValue) return;
 
-    const sourcePath = staticMemberPath(source);
-    if (!sourcePath) return;
+    if (unwrappedValue.type === "AssignmentPattern") {
+      registerBindingPath(unwrappedValue.left, sourcePath);
+      return;
+    }
 
-    const sourceProperty = sourcePath.at(-1);
-    const sourceIsGlobalObject =
-      sourcePath.length === 1 &&
-      GLOBAL_OBJECT_IDENTIFIERS.has(sourcePath[0] ?? "");
+    if (unwrappedValue.type === "ObjectPattern") {
+      registerObjectPattern(unwrappedValue, sourcePath);
+      return;
+    }
 
-    if (!Array.isArray(unwrappedPattern.properties)) return;
-    for (const property of unwrappedPattern.properties) {
+    const aliasName = bindingIdentifier(unwrappedValue);
+    if (!aliasName) return;
+
+    destructuredBindings.add(aliasName);
+    networkAliases.delete(aliasName);
+    documentWriteAliases.delete(aliasName);
+
+    if (isBrowserNetworkPath(sourcePath)) {
+      networkAliases.add(aliasName);
+      usesBrowserNetworkApi = true;
+    }
+
+    if (isDocumentWritePath(sourcePath)) {
+      documentWriteAliases.add(aliasName);
+      usesDocumentWrite = true;
+    }
+  };
+
+  function registerObjectPattern(pattern: AstNode, sourcePath: string[]) {
+    if (!Array.isArray(pattern.properties)) return;
+    for (const property of pattern.properties) {
       if (!isAstNode(property) || property.type !== "Property") continue;
 
       const propertyName = staticPatternPropertyName(property);
-      const aliasName = bindingIdentifier(property.value);
-      if (!propertyName || !aliasName) continue;
-
-      if (
-        (sourceIsGlobalObject && DIRECT_NETWORK_IDENTIFIERS.has(propertyName)) ||
-        (propertyName === "sendBeacon" && sourceProperty === "navigator")
-      ) {
-        networkAliases.add(aliasName);
-        usesBrowserNetworkApi = true;
-      }
-
-      if (propertyName === "write" && sourceProperty === "document") {
-        documentWriteAliases.add(aliasName);
-        usesDocumentWrite = true;
-      }
+      if (!propertyName) continue;
+      registerBindingPath(property.value, [...sourcePath, propertyName]);
     }
+  }
+
+  const registerDestructuredAliases = (pattern: unknown, source: unknown) => {
+    const unwrappedPattern = unwrapChain(pattern);
+    const sourcePath = staticMemberPath(source);
+    if (unwrappedPattern?.type !== "ObjectPattern" || !sourcePath) return;
+    registerObjectPattern(unwrappedPattern, sourcePath);
   };
 
   walkAst(program, (node, parent, parentKey, grandparent, bindingPosition) => {
@@ -401,7 +486,8 @@ function analyzeJavaScript(program?: AstNode) {
         grandparent,
         bindingPosition,
       ) &&
-      (DIRECT_NETWORK_IDENTIFIERS.has(node.name) ||
+      ((DIRECT_NETWORK_IDENTIFIERS.has(node.name) &&
+        !destructuredBindings.has(node.name)) ||
         networkAliases.has(node.name))
     ) {
       usesBrowserNetworkApi = true;
@@ -425,18 +511,11 @@ function analyzeJavaScript(program?: AstNode) {
     const path = staticMemberPath(node);
     if (!path || path.length < 2) return;
 
-    const last = path.at(-1);
-    const previous = path.at(-2);
-    if (
-      (last &&
-        DIRECT_NETWORK_IDENTIFIERS.has(last) &&
-        GLOBAL_OBJECT_IDENTIFIERS.has(path[0])) ||
-      (last === "sendBeacon" && previous === "navigator")
-    ) {
+    if (isBrowserNetworkPath(path)) {
       usesBrowserNetworkApi = true;
     }
 
-    if (last === "write" && previous === "document") {
+    if (isDocumentWritePath(path)) {
       usesDocumentWrite = true;
     }
   });
@@ -454,7 +533,8 @@ export function validateGeneratedAppQuality(
 ): GeneratedAppQualityResult {
   const violationCodes: GeneratedAppQualityViolationCode[] = [];
   const { html, javascript } = app;
-  const hasInteractiveContent = hasActionableHtml(html);
+  const htmlTags = scanHtmlTags(html);
+  const hasInteractiveContent = hasActionableHtml(html, htmlTags);
   const parsedJavaScript =
     javascript.trim().length > 0
       ? parseClassicScript(javascript)
@@ -473,7 +553,7 @@ export function validateGeneratedAppQuality(
     violationCodes.push("HTML_STYLE_WRAPPER");
   }
 
-  if (/<[^>]*(?:\s|\/)on[a-z][\w:-]*\s*=/i.test(html)) {
+  if (hasInlineEventHandler(htmlTags)) {
     violationCodes.push("HTML_INLINE_EVENT_HANDLER");
   }
 

@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 
 import { composePreviewDocument } from "./preview";
+import { parsePreviewHealthMessage } from "./preview-health";
 import { createPreviewHealthRuntime } from "./preview-health-runtime";
 
 type Listener = (event: Record<string, unknown>) => void;
@@ -108,7 +109,7 @@ function runDomRuntime(
   expect(settleTimer).toBeDefined();
   settleTimer?.callback();
 
-  return { dom, messages };
+  return { dom, messages, timers };
 }
 
 function runComposedRuntime(html: string, javascript = "") {
@@ -285,6 +286,61 @@ describe("createPreviewHealthRuntime", () => {
       "healthy",
       "healthy",
     ]);
+  });
+
+  it("makes the post-load re-report protocol-valid when direct wiring is removed", () => {
+    let clickListener: (() => void) | undefined;
+    const harness = runDomRuntime('<button id="save">Save</button>', (window) => {
+      clickListener = () => {};
+      window.document.querySelector("#save")?.addEventListener("click", clickListener);
+    });
+
+    expect(
+      parsePreviewHealthMessage(harness.messages.at(-1), "health-1"),
+    ).toMatchObject({ status: "healthy", interactionCoverage: "complete" });
+
+    const save = harness.dom.window.document.querySelector("#save");
+    save?.removeEventListener("click", clickListener!);
+    harness.dom.window.dispatchEvent(new harness.dom.window.Event("load"));
+
+    let parentReport: ReturnType<typeof parsePreviewHealthMessage> = null;
+    expect(parentReport).toBeNull();
+    const postLoadTimer = harness.timers.find((timer) => timer.delay === 0);
+    expect(postLoadTimer).toBeDefined();
+    postLoadTimer?.callback();
+    parentReport = parsePreviewHealthMessage(harness.messages.at(-1), "health-1");
+
+    expect(parentReport).toMatchObject({
+      status: "issues",
+      interactionCoverage: "incomplete",
+      advertisedActions: 1,
+      wiredActions: 0,
+      issues: [expect.objectContaining({ message: expect.stringContaining("direct") })],
+    });
+  });
+
+  it("reports current empty content in the post-load re-report", () => {
+    const harness = runDomRuntime("<main>Dashboard</main>");
+
+    expect(
+      parsePreviewHealthMessage(harness.messages.at(-1), "health-1"),
+    ).toMatchObject({ status: "healthy", hasMeaningfulContent: true });
+
+    harness.dom.window.document.body.replaceChildren();
+    harness.dom.window.dispatchEvent(new harness.dom.window.Event("load"));
+
+    let parentReport: ReturnType<typeof parsePreviewHealthMessage> = null;
+    expect(parentReport).toBeNull();
+    const postLoadTimer = harness.timers.find((timer) => timer.delay === 0);
+    expect(postLoadTimer).toBeDefined();
+    postLoadTimer?.callback();
+    parentReport = parsePreviewHealthMessage(harness.messages.at(-1), "health-1");
+
+    expect(parentReport).toMatchObject({
+      status: "issues",
+      hasMeaningfulContent: false,
+      issues: [expect.objectContaining({ message: expect.stringContaining("meaningful") })],
+    });
   });
 
   it("reports complete direct wiring without invoking generated listeners", () => {

@@ -115,6 +115,34 @@ describe("validateGeneratedAppQuality", () => {
     ).toContain("HTML_INLINE_EVENT_HANDLER");
   });
 
+  it.each([
+    ["double-quoted", '<button title="1 > 0" onclick="save()">Save</button>'],
+    ["single-quoted", "<button title='1 > 0' onclick='save()'>Save</button>"],
+  ])(
+    "rejects an inline event handler after a %s greater-than attribute value",
+    async (_label, html) => {
+      const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+      expect(
+        quality.validateGeneratedAppQuality({ ...staticApp, html }).violationCodes,
+      ).toContain("HTML_INLINE_EVENT_HANDLER");
+    },
+  );
+
+  it.each([
+    ["double-quoted", '<input title="1 > 0" type="hidden">'],
+    ["single-quoted", "<input title='1 > 0' type='hidden'>"],
+  ])(
+    "keeps a hidden input non-actionable after a %s greater-than attribute value",
+    async (_label, html) => {
+      const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+      expect(
+        quality.validateGeneratedAppQuality({ ...staticApp, html }).violationCodes,
+      ).not.toContain("ACTIONABLE_HTML_REQUIRES_JAVASCRIPT");
+    },
+  );
+
   it("rejects navigator.sendBeacon as a browser network API", async () => {
     const quality = (await import("@/lib/generated-app-quality").catch(
       () => undefined,
@@ -188,6 +216,46 @@ describe("validateGeneratedAppQuality", () => {
     ).toContain(violationCode);
   });
 
+  it.each([
+    [
+      "ordinary nested navigator.sendBeacon",
+      "const { navigator: { sendBeacon: ping } } = window; ping('/x');",
+      "JAVASCRIPT_NETWORK_API",
+    ],
+    [
+      "computed-string nested navigator.sendBeacon",
+      "const { ['navigator']: { ['sendBeacon']: ping } } = window; ping('/x');",
+      "JAVASCRIPT_NETWORK_API",
+    ],
+    [
+      "computed-template nested navigator.sendBeacon",
+      "const { [`navigator`]: { [`sendBeacon`]: ping } } = window; ping('/x');",
+      "JAVASCRIPT_NETWORK_API",
+    ],
+    [
+      "ordinary nested document.write",
+      "const { document: { write: emit } } = globalThis; emit('x');",
+      "JAVASCRIPT_DOCUMENT_WRITE",
+    ],
+    [
+      "computed-string nested document.write assignment",
+      "({ ['document']: { ['write']: emit } } = globalThis); emit('x');",
+      "JAVASCRIPT_DOCUMENT_WRITE",
+    ],
+    [
+      "computed-template nested document.write",
+      "const { [`document`]: { [`write`]: emit } } = globalThis; emit('x');",
+      "JAVASCRIPT_DOCUMENT_WRITE",
+    ],
+  ])("rejects %s", async (_label, javascript, violationCode) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({ ...staticApp, javascript })
+        .violationCodes,
+    ).toContain(violationCode);
+  });
+
   it("rejects destructuring assignments from forbidden browser objects", async () => {
     const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
 
@@ -207,6 +275,32 @@ describe("validateGeneratedAppQuality", () => {
         ...staticApp,
         javascript: "const { fetch: request } = app; request('/api');",
       }),
+    ).toEqual({
+      violationCodes: [],
+      correctiveMessage: "",
+    });
+  });
+
+  it.each([
+    ["shorthand declaration", "const { fetch } = app; fetch('/local');"],
+    [
+      "nested aliased declaration",
+      "const { network: { fetch: request } } = app; request('/local');",
+    ],
+    ["shorthand assignment", "({ fetch } = app); fetch('/local');"],
+    [
+      "nested shorthand assignment",
+      "({ network: { fetch } } = app); fetch('/local');",
+    ],
+    [
+      "aliased assignment",
+      "({ fetch: request } = app); request('/local');",
+    ],
+  ])("ignores an unrelated %s binding", async (_label, javascript) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({ ...staticApp, javascript }),
     ).toEqual({
       violationCodes: [],
       correctiveMessage: "",

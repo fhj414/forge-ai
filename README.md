@@ -167,7 +167,7 @@ npm run lint
 npm run build
 ```
 
-The 2026-09-23 delivery verification passed 167 tests across 18 test files, TypeScript checking, lint, and the production build. Browser QA against the production build confirmed a directly wired fixture (`Runtime check passed`, `1/1 detected`) and that its control changed the preview; an inert fixture reported `0/1 detected` with a concrete repairable issue; and delegated wiring reported `Manual verification needed` without offering repair. These checks are bounded evidence, not a claim that generated application business semantics are proven.
+The 2026-09-23 delivery verification passed 184 tests across 18 test files, TypeScript checking, lint, and the production build. Browser QA against the production build confirmed a directly wired fixture (`Runtime check passed`, `1/1 detected`) and that its control changed the preview; an inert fixture reported `0/1 detected` with a concrete repairable issue; and delegated wiring reported `Manual verification needed` without offering repair. These checks are bounded evidence, not a claim that generated application business semantics are proven.
 
 ## Deploy to Vercel
 
