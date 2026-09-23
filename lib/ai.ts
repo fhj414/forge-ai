@@ -1,4 +1,5 @@
 import { APP_BUILDER_SYSTEM_PROMPT } from "@/prompts/app-builder";
+import { validateGeneratedAppQuality } from "@/lib/generated-app-quality";
 import {
   InvalidModelResponseError,
   parseGeneratedApp,
@@ -55,6 +56,9 @@ function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+const INVALID_MODEL_RESPONSE_CORRECTION =
+  "Correct the JSON artifact. Fix: INVALID_MODEL_RESPONSE. Return only a complete app payload that follows the required schema.";
+
 export async function generateApplication(
   input: GenerateRequest,
   config: AIConfig,
@@ -67,10 +71,14 @@ export async function generateApplication(
   ];
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? 55_000);
+  let correctiveMessage: string | null = null;
 
   try {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
+        const requestMessages = correctiveMessage
+          ? [...messages, { role: "user", content: correctiveMessage }]
+          : messages;
         const response = await fetcher(providerUrl(config.baseUrl), {
           method: "POST",
           headers: {
@@ -79,7 +87,7 @@ export async function generateApplication(
           },
           body: JSON.stringify({
             model: config.model,
-            messages,
+            messages: requestMessages,
             temperature: 0.35,
             response_format: { type: "json_object" },
           }),
@@ -105,9 +113,30 @@ export async function generateApplication(
           throw new InvalidModelResponseError();
         }
 
-        return parseGeneratedApp(content);
+        const app = parseGeneratedApp(content);
+        const quality = validateGeneratedAppQuality(app);
+
+        if (quality.violationCodes.length > 0) {
+          if (attempt === 0) {
+            correctiveMessage = quality.correctiveMessage;
+            continue;
+          }
+
+          throw new InvalidModelResponseError();
+        }
+
+        return app;
       } catch (error) {
-        if (error instanceof InvalidModelResponseError || error instanceof AIClientError) {
+        if (error instanceof InvalidModelResponseError) {
+          if (attempt === 0) {
+            correctiveMessage ??= INVALID_MODEL_RESPONSE_CORRECTION;
+            continue;
+          }
+
+          throw error;
+        }
+
+        if (error instanceof AIClientError) {
           throw error;
         }
 

@@ -31,6 +31,16 @@ const validContent = JSON.stringify({
   suggestions: ["Add CSV export"],
 });
 
+const inertInteractiveContent = JSON.stringify({
+  title: "Inert Ledger",
+  summary: "A ledger with a save action.",
+  html: "<main><button>Save</button></main>",
+  css: "body { background: #09090b; }",
+  javascript: "",
+  changes: ["Save action"],
+  suggestions: ["Add categories"],
+});
+
 function completion(content = validContent, status = 200) {
   return new Response(
     JSON.stringify({ choices: [{ message: { content } }] }),
@@ -133,13 +143,57 @@ describe("generateApplication", () => {
     }
   });
 
-  it("rejects malformed model output", async () => {
+  it("retries malformed model output once before rejecting it", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(completion("not valid json"));
+      .mockResolvedValueOnce(completion("not valid json"))
+      .mockResolvedValueOnce(completion("not valid json"));
 
     await expect(generateApplication(request, config, fetcher)).rejects.toBeInstanceOf(
       InvalidModelResponseError,
     );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("corrects a quality-gate rejection in one bounded second attempt", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
+      .mockResolvedValueOnce(completion());
+
+    await expect(generateApplication(request, config, fetcher)).resolves.toMatchObject({
+      title: "Dark Ledger",
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as {
+      model: string;
+    };
+    const secondBody = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body)) as {
+      model: string;
+      messages: { role: string; content: string }[];
+    };
+    const correction = secondBody.messages.at(-1)?.content ?? "";
+
+    expect(firstBody.model).toBe("forge-test");
+    expect(secondBody.model).toBe("forge-test");
+    expect(correction).toContain("ACTIONABLE_HTML_REQUIRES_JAVASCRIPT");
+    expect(correction).not.toContain("<button>Save</button>");
+    expect(correction.length).toBeLessThanOrEqual(500);
+    expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(
+      fetcher.mock.calls[1]?.[1]?.signal,
+    );
+  });
+
+  it("rejects after the corrective attempt also fails quality validation", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
+      .mockResolvedValueOnce(completion(inertInteractiveContent));
+
+    await expect(generateApplication(request, config, fetcher)).rejects.toBeInstanceOf(
+      InvalidModelResponseError,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });

@@ -189,4 +189,46 @@ describe("POST /api/generate", () => {
       generationMetadata: { kind: "refinement" },
     });
   });
+
+  it("maps quality-correction exhaustion to invalid model output", async () => {
+    process.env.AI_API_KEY = "test-key";
+    process.env.AI_MODEL = "forge-test";
+    const inertResponse = () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  title: "Inert Task Orbit",
+                  summary: "A task manager with a save action.",
+                  html: "<main><button>Save</button></main>",
+                  css: "body{}",
+                  javascript: "",
+                  changes: ["Save action"],
+                  suggestions: ["Add keyboard shortcuts"],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(inertResponse())
+      .mockResolvedValueOnce(inertResponse());
+    vi.stubGlobal("fetch", fetcher);
+
+    const response = await POST(makeRequest({ prompt: "Build a task manager" }));
+
+    expect(response.status).toBe(502);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "INVALID_MODEL_RESPONSE",
+        message: "The AI returned an invalid application. Please retry.",
+      },
+    });
+  });
 });
