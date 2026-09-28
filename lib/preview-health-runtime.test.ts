@@ -1,6 +1,5 @@
 import { createContext, runInContext } from "node:vm";
 
-// @ts-expect-error -- jsdom does not publish bundled TypeScript declarations.
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 
@@ -19,8 +18,76 @@ interface RuntimeHarnessOptions {
   readyState?: "complete" | "loading";
 }
 
+function createHealthChannelHarness(messages: Record<string, unknown>[]) {
+  type PortHandler = ((event: { data: unknown }) => void) | null;
+
+  class HarnessPort {
+    onmessage: PortHandler = null;
+    peer?: HarnessPort;
+    closed = false;
+
+    postMessage(data: unknown) {
+      if (!this.closed) this.peer?.onmessage?.({ data });
+    }
+
+    start() {}
+
+    close() {
+      this.closed = true;
+    }
+  }
+
+  class HarnessMessageChannel {
+    port1 = new HarnessPort();
+    port2 = new HarnessPort();
+
+    constructor() {
+      this.port1.peer = this.port2;
+      this.port2.peer = this.port1;
+    }
+  }
+
+  function receiveConnection(
+    message: Record<string, unknown>,
+    _targetOrigin?: string,
+    transfer?: HarnessPort[],
+  ) {
+    if (
+      message.channel !== "forge:preview-health-connect" ||
+      message.kind !== "connect"
+    ) {
+      return;
+    }
+
+    const port = transfer?.[0];
+    if (!port) return;
+    port.onmessage = (event) => messages.push(event.data as Record<string, unknown>);
+    port.start();
+    port.postMessage({
+      channel: "forge:preview-health-connect",
+      version: 2,
+      sessionId: message.sessionId,
+      nonce: message.nonce,
+      kind: "ack",
+    });
+  }
+
+  return { HarnessMessageChannel, receiveConnection };
+}
+
+function healthConnectionRequest() {
+  return {
+    channel: "forge:preview-health-connect",
+    version: 2,
+    sessionId: "health-1",
+    nonce: "test-health-nonce",
+    kind: "request",
+  };
+}
+
 function runRuntime(options: RuntimeHarnessOptions = {}) {
   const messages: Record<string, unknown>[] = [];
+  const healthChannel = createHealthChannelHarness(messages);
   const documentListeners = new Map<string, Listener>();
   const windowListeners = new Map<string, Listener>();
   const timers: Array<{ callback: () => void; delay: number }> = [];
@@ -57,12 +124,15 @@ function runRuntime(options: RuntimeHarnessOptions = {}) {
       windowListeners.set(type, listener);
     },
     parent: {
-      postMessage: (message: Record<string, unknown>) => messages.push(message),
+      postMessage: healthChannel.receiveConnection,
     },
+    MessageChannel: healthChannel.HarnessMessageChannel,
     setTimeout: context.setTimeout,
   };
+  context.MessageChannel = healthChannel.HarnessMessageChannel;
 
   runInContext(createPreviewHealthRuntime("health-1"), createContext(context));
+  windowListeners.get("message")?.({ data: healthConnectionRequest() });
 
   return { document, documentListeners, messages, timers, windowListeners };
 }
@@ -83,6 +153,7 @@ function runDomRuntime(
     runScripts: "outside-only",
   });
   const messages: Record<string, unknown>[] = [];
+  const healthChannel = createHealthChannelHarness(messages);
   const timers: Array<{ callback: () => void; delay: number }> = [];
   Object.defineProperty(dom.window.document, "readyState", {
     configurable: true,
@@ -95,8 +166,12 @@ function runDomRuntime(
   Object.defineProperty(dom.window, "parent", {
     configurable: true,
     value: {
-      postMessage: (message: Record<string, unknown>) => messages.push(message),
+      postMessage: healthChannel.receiveConnection,
     },
+  });
+  Object.defineProperty(dom.window, "MessageChannel", {
+    configurable: true,
+    value: healthChannel.HarnessMessageChannel,
   });
   dom.window.setTimeout = ((callback: TimerHandler, delay?: number) => {
     timers.push({ callback: callback as () => void, delay: delay ?? 0 });
@@ -104,6 +179,9 @@ function runDomRuntime(
   }) as typeof dom.window.setTimeout;
 
   dom.window.eval(createPreviewHealthRuntime("health-1"));
+  dom.window.dispatchEvent(
+    new dom.window.MessageEvent("message", { data: healthConnectionRequest() }),
+  );
   registerListeners?.(dom.window);
   const settleTimer = timers.find((timer) => timer.delay === 120);
   expect(settleTimer).toBeDefined();
@@ -112,13 +190,14 @@ function runDomRuntime(
   return { dom, messages, timers };
 }
 
-function runComposedRuntime(html: string, javascript = "") {
+function runComposedRuntime(html: string, javascript = "", css = "") {
   const previewDocument = composePreviewDocument(
-    { html, css: "", javascript },
+    { html, css, javascript },
     { diagnosticSessionId: "health-1" },
   );
   const dom = new JSDOM(previewDocument, { runScripts: "outside-only" });
   const messages: Record<string, unknown>[] = [];
+  const healthChannel = createHealthChannelHarness(messages);
   const timers: Array<{ callback: () => void; delay: number }> = [];
   Object.defineProperty(dom.window.document, "readyState", {
     configurable: true,
@@ -131,8 +210,12 @@ function runComposedRuntime(html: string, javascript = "") {
   Object.defineProperty(dom.window, "parent", {
     configurable: true,
     value: {
-      postMessage: (message: Record<string, unknown>) => messages.push(message),
+      postMessage: healthChannel.receiveConnection,
     },
+  });
+  Object.defineProperty(dom.window, "MessageChannel", {
+    configurable: true,
+    value: healthChannel.HarnessMessageChannel,
   });
   dom.window.setTimeout = ((callback: TimerHandler, delay?: number) => {
     timers.push({ callback: callback as () => void, delay: delay ?? 0 });
@@ -142,11 +225,14 @@ function runComposedRuntime(html: string, javascript = "") {
   for (const script of dom.window.document.querySelectorAll("script")) {
     dom.window.eval(script.textContent ?? "");
   }
+  dom.window.dispatchEvent(
+    new dom.window.MessageEvent("message", { data: healthConnectionRequest() }),
+  );
   const settleTimer = timers.find((timer) => timer.delay === 120);
   expect(settleTimer).toBeDefined();
   settleTimer?.callback();
 
-  return { dom, messages };
+  return { dom, messages, timers };
 }
 
 describe("createPreviewHealthRuntime", () => {
@@ -173,12 +259,19 @@ describe("createPreviewHealthRuntime", () => {
       forms: 1,
       advertisedActions: 0,
       wiredActions: 0,
-      advertisedForms: 1,
+      advertisedForms: 0,
       wiredForms: 0,
       delegatedActionListeners: 0,
-      interactionCoverage: "incomplete",
-      issues: [expect.objectContaining({ message: expect.stringContaining("direct") })],
+      interactionCoverage: "none",
+      issues: [
+        expect.objectContaining({
+          message: expect.stringContaining("enabled, visible app action"),
+        }),
+      ],
     });
+    expect(
+      parsePreviewHealthMessage(harness.messages.at(-1), "health-1"),
+    ).not.toBeNull();
   });
 
   it("reports bounded, normalized runtime issues when errors reject with unprintable values", () => {
@@ -248,7 +341,9 @@ describe("createPreviewHealthRuntime", () => {
     expect(harness.messages.at(-1)).toMatchObject({
       status: "issues",
       hasMeaningfulContent: false,
-      issues: [expect.objectContaining({ message: expect.stringContaining("meaningful") })],
+      issues: expect.arrayContaining([
+        expect.objectContaining({ message: expect.stringContaining("meaningful") }),
+      ]),
     });
   });
 
@@ -257,13 +352,22 @@ describe("createPreviewHealthRuntime", () => {
 
     settleRuntime(harness);
 
-    expect(harness.messages.at(-1)).toMatchObject({ status: "healthy", issues: [] });
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      issues: [
+        expect.objectContaining({
+          message: expect.stringContaining("enabled, visible app action"),
+        }),
+      ],
+    });
 
     harness.windowListeners.get("error")?.({ message: "late failure" });
 
     expect(harness.messages.at(-1)).toMatchObject({
       status: "issues",
-      issues: [expect.objectContaining({ message: "late failure" })],
+      issues: expect.arrayContaining([
+        expect.objectContaining({ message: "late failure" }),
+      ]),
     });
   });
 
@@ -273,7 +377,7 @@ describe("createPreviewHealthRuntime", () => {
     settleRuntime(harness);
     expect(harness.messages.map((message) => message.status)).toEqual([
       "checking",
-      "healthy",
+      "issues",
     ]);
 
     harness.windowListeners.get("load")?.({});
@@ -283,8 +387,8 @@ describe("createPreviewHealthRuntime", () => {
 
     expect(harness.messages.map((message) => message.status)).toEqual([
       "checking",
-      "healthy",
-      "healthy",
+      "issues",
+      "issues",
     ]);
   });
 
@@ -324,7 +428,7 @@ describe("createPreviewHealthRuntime", () => {
 
     expect(
       parsePreviewHealthMessage(harness.messages.at(-1), "health-1"),
-    ).toMatchObject({ status: "healthy", hasMeaningfulContent: true });
+    ).toMatchObject({ status: "issues", hasMeaningfulContent: true });
 
     harness.dom.window.document.body.replaceChildren();
     harness.dom.window.dispatchEvent(new harness.dom.window.Event("load"));
@@ -339,7 +443,9 @@ describe("createPreviewHealthRuntime", () => {
     expect(parentReport).toMatchObject({
       status: "issues",
       hasMeaningfulContent: false,
-      issues: [expect.objectContaining({ message: expect.stringContaining("meaningful") })],
+      issues: expect.arrayContaining([
+        expect.objectContaining({ message: expect.stringContaining("meaningful") }),
+      ]),
     });
   });
 
@@ -481,6 +587,7 @@ describe("createPreviewHealthRuntime", () => {
         const inactiveListener: { handleEvent: (() => void) | null } = {
           handleEvent: () => {},
         };
+        // @ts-expect-error -- exercise a listener object that becomes non-callable.
         inactiveObject.addEventListener("click", inactiveListener);
         inactiveListener.handleEvent = null;
       },
@@ -680,6 +787,7 @@ describe("createPreviewHealthRuntime", () => {
     const harness = runDomRuntime(
       '<button id="null-handler">Null</button><button id="wrong-case">Wrong case</button>',
       (window) => {
+        // @ts-expect-error -- null is deliberate invalid runtime input.
         window.document.querySelector("#null-handler")?.addEventListener("click", null);
         window.document.querySelector("#wrong-case")?.addEventListener("CLICK", () => {});
       },
@@ -792,19 +900,241 @@ describe("createPreviewHealthRuntime", () => {
     });
   });
 
-  it("reports none for static content and ignores native links and hidden controls", () => {
+  it("reports an issue for static content and ignores native links and hidden controls", () => {
     const harness = runDomRuntime(
       '<main>Documentation <a href="/docs">Read more</a><input type="hidden"><select hidden><option>Hidden</option></select><textarea hidden></textarea></main>',
     );
 
     expect(harness.messages.at(-1)).toMatchObject({
-      status: "healthy",
+      status: "issues",
       advertisedActions: 0,
       wiredActions: 0,
       advertisedForms: 0,
       wiredForms: 0,
       delegatedActionListeners: 0,
       interactionCoverage: "none",
+      issues: [
+        expect.objectContaining({
+          message: expect.stringContaining("enabled, visible app action"),
+        }),
+      ],
+    });
+  });
+
+  it("reports an issue when CSS hides the only advertised action", () => {
+    const harness = runComposedRuntime(
+      '<button id="save">Save</button>',
+      'document.querySelector("#save").addEventListener("click", () => {});',
+      "#save { display: none; }",
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 0,
+      wiredActions: 0,
+      interactionCoverage: "none",
+      issues: [
+        expect.objectContaining({
+          message: expect.stringContaining("enabled, visible app action"),
+        }),
+      ],
+    });
+  });
+
+  it("reports an issue when a transform collapses the only action", () => {
+    const harness = runComposedRuntime(
+      '<button id="save">Save</button>',
+      'document.querySelector("#save").addEventListener("click", () => {});',
+      "#save { transform: scale(0); }",
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 0,
+      interactionCoverage: "none",
+    });
+  });
+
+  it("reports an issue when clip-path fully clips the only action", () => {
+    const harness = runComposedRuntime(
+      '<button id="save">Save</button>',
+      'document.querySelector("#save").addEventListener("click", () => {});',
+      "#save { clip-path: inset(0px 50%); }",
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 0,
+      interactionCoverage: "none",
+    });
+  });
+
+  it("reports an issue when a zero-size overflow ancestor clips the only action", () => {
+    const harness = runDomRuntime(
+      '<div id="clip" style="width: 0; height: 0; overflow: hidden"><button id="save">Save</button></div>',
+      (window) => {
+        Object.defineProperty(window.document.documentElement, "clientWidth", {
+          configurable: true,
+          value: 800,
+        });
+        Object.defineProperty(window.document.documentElement, "clientHeight", {
+          configurable: true,
+          value: 600,
+        });
+        const clip = window.document.querySelector("#clip")!;
+        const save = window.document.querySelector("#save")!;
+        clip.getBoundingClientRect = () =>
+          ({
+            bottom: 0,
+            height: 0,
+            left: 0,
+            right: 0,
+            top: 0,
+            width: 0,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          }) as DOMRect;
+        save.getClientRects = () =>
+          ([
+            {
+              bottom: 40,
+              height: 30,
+              left: 10,
+              right: 110,
+              top: 10,
+              width: 100,
+              x: 10,
+              y: 10,
+              toJSON: () => ({}),
+            },
+          ] as unknown as DOMRectList);
+        save.addEventListener("click", () => {});
+      },
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 0,
+      interactionCoverage: "none",
+    });
+  });
+
+  it("reports an issue when a disabled fieldset disables the only action", () => {
+    const harness = runComposedRuntime(
+      '<fieldset disabled><button id="save">Save</button></fieldset>',
+      'document.querySelector("#save").addEventListener("click", () => {});',
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 0,
+      interactionCoverage: "none",
+    });
+  });
+
+  it("reports an issue when closed details hide the only action", () => {
+    const harness = runComposedRuntime(
+      '<details><summary>Options</summary><button id="save">Save</button></details>',
+      'document.querySelector("#save").addEventListener("click", () => {});',
+    );
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 0,
+      interactionCoverage: "none",
+    });
+  });
+
+  it("rechecks after the only action becomes disabled", async () => {
+    const harness = runComposedRuntime(
+      '<button id="save">Save</button>',
+      'document.querySelector("#save").addEventListener("click", () => {});',
+    );
+    expect(harness.messages.at(-1)).toMatchObject({ status: "healthy" });
+
+    harness.dom.window.document.querySelector("#save")?.setAttribute("disabled", "");
+    await Promise.resolve();
+    const recheck = harness.timers.findLast((timer) => timer.delay === 60);
+    expect(recheck).toBeDefined();
+    recheck?.callback();
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 0,
+      interactionCoverage: "none",
+    });
+  });
+
+  it("keeps a bounded recheck scheduled during continuous DOM updates", async () => {
+    const harness = runComposedRuntime(
+      '<button id="save">Save</button><output id="count">0</output>',
+      'document.querySelector("#save").addEventListener("click", () => {});',
+    );
+    const save = harness.dom.window.document.querySelector("#save")!;
+    const count = harness.dom.window.document.querySelector("#count")!;
+
+    save.setAttribute("disabled", "");
+    await Promise.resolve();
+    for (let index = 1; index <= 3; index += 1) {
+      count.textContent = String(index);
+      await Promise.resolve();
+    }
+
+    const rechecks = harness.timers.filter((timer) => timer.delay === 60);
+    expect(rechecks).toHaveLength(1);
+    rechecks[0]?.callback();
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      interactionCoverage: "none",
+    });
+  });
+
+  it("rechecks after a registered action listener is removed", () => {
+    const harness = runComposedRuntime(
+      '<button id="save">Save</button>',
+      'window.saveHandler = () => {}; document.querySelector("#save").addEventListener("click", window.saveHandler);',
+    );
+    expect(harness.messages.at(-1)).toMatchObject({ status: "healthy" });
+
+    const save = harness.dom.window.document.querySelector("#save");
+    const saveHandler = (
+      harness.dom.window as unknown as { saveHandler: EventListener }
+    ).saveHandler;
+    save?.removeEventListener("click", saveHandler);
+    const recheck = harness.timers.findLast((timer) => timer.delay === 60);
+    expect(recheck).toBeDefined();
+    recheck?.callback();
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      advertisedActions: 1,
+      wiredActions: 0,
+      interactionCoverage: "incomplete",
+    });
+  });
+
+  it("rechecks when an action listener is registered after initial settlement", () => {
+    const harness = runComposedRuntime(
+      '<button id="save">Save</button>',
+      'window.setTimeout(() => document.querySelector("#save").addEventListener("click", () => {}), 200);',
+    );
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "issues",
+      interactionCoverage: "incomplete",
+    });
+
+    const delayedRegistration = harness.timers.find((timer) => timer.delay === 200);
+    expect(delayedRegistration).toBeDefined();
+    delayedRegistration?.callback();
+    const recheck = harness.timers.findLast((timer) => timer.delay === 60);
+    expect(recheck).toBeDefined();
+    recheck?.callback();
+
+    expect(harness.messages.at(-1)).toMatchObject({
+      status: "healthy",
+      wiredActions: 1,
+      interactionCoverage: "complete",
     });
   });
 

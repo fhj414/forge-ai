@@ -4,6 +4,7 @@ import {
   PREVIEW_HEALTH_CHANNEL,
   PREVIEW_HEALTH_VERSION,
   buildPreviewRepairPrompt,
+  isPreviewHealthConnectionMessage,
   parsePreviewHealthMessage,
 } from "./preview-health";
 
@@ -34,6 +35,31 @@ const report = {
 };
 
 describe("preview health protocol", () => {
+  it("accepts only the requested private health connection", () => {
+    const connection = {
+      channel: "forge:preview-health-connect",
+      version: 2,
+      sessionId: report.sessionId,
+      nonce: "parent-only-nonce",
+      kind: "connect",
+    };
+
+    expect(
+      isPreviewHealthConnectionMessage(
+        connection,
+        report.sessionId,
+        "parent-only-nonce",
+      ),
+    ).toBe(true);
+    expect(
+      isPreviewHealthConnectionMessage(
+        { ...connection, nonce: "forged" },
+        report.sessionId,
+        "parent-only-nonce",
+      ),
+    ).toBe(false);
+  });
+
   it("accepts a valid report and rejects stale or invalid reports", () => {
     expect(PREVIEW_HEALTH_VERSION).toBe(2);
     expect(parsePreviewHealthMessage(report, "preview-session")).toEqual(report);
@@ -70,7 +96,20 @@ describe("preview health protocol", () => {
     expect(parsePreviewHealthMessage({ ...complete, wiredActions: 3 }, report.sessionId)).toBeNull();
     expect(parsePreviewHealthMessage({ ...complete, advertisedActions: 10_001 }, report.sessionId)).toBeNull();
     expect(parsePreviewHealthMessage({ ...complete, advertisedActions: 4 }, report.sessionId)).toBeNull();
-    expect(parsePreviewHealthMessage({ ...complete, advertisedForms: 0 }, report.sessionId)).toBeNull();
+    expect(parsePreviewHealthMessage({
+      ...complete,
+      advertisedForms: 0,
+      wiredForms: 0,
+    }, report.sessionId)).toEqual({
+      ...complete,
+      advertisedForms: 0,
+      wiredForms: 0,
+    });
+    expect(parsePreviewHealthMessage({
+      ...complete,
+      advertisedForms: 2,
+      wiredForms: 2,
+    }, report.sessionId)).toBeNull();
     expect(parsePreviewHealthMessage({ ...complete, interactionCoverage: "none" }, report.sessionId)).toBeNull();
     expect(parsePreviewHealthMessage({
       ...complete,
@@ -93,6 +132,16 @@ describe("preview health protocol", () => {
       forms: 0,
       delegatedActionListeners: 0,
       interactionCoverage: "complete",
+    }, report.sessionId)).toBeNull();
+    expect(parsePreviewHealthMessage({
+      ...complete,
+      advertisedActions: 0,
+      wiredActions: 0,
+      advertisedForms: 0,
+      wiredForms: 0,
+      forms: 0,
+      delegatedActionListeners: 0,
+      interactionCoverage: "none",
     }, report.sessionId)).toBeNull();
   });
 

@@ -160,7 +160,12 @@ describe("BuilderWorkspace", () => {
     expect(
       await screen.findByText("A personal finance dashboard with clear spending insights."),
     ).toBeInTheDocument();
-    expect(screen.getByText("Build completed")).toBeInTheDocument();
+    expect(screen.getByText("Build generated")).toBeInTheDocument();
+    const initialFrame = screen.getByTitle(
+      "Generated app preview",
+    ) as HTMLIFrameElement;
+    dispatchHealthMessage(initialFrame, healthyReportFor(initialFrame));
+    expect(screen.getByText("Build verified")).toBeInTheDocument();
     expect(screen.getByText("forge-test")).toBeInTheDocument();
     expect(screen.getByText("842 ms · 3 lines · 154 bytes")).toBeInTheDocument();
     expect(screen.getByText("Schema validated")).toBeInTheDocument();
@@ -224,7 +229,7 @@ describe("BuilderWorkspace", () => {
     expect(screen.getByRole("button", { name: /^generate app$/i })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: /retry generation/i }));
 
-    expect(await screen.findByText("Build completed")).toBeInTheDocument();
+    expect(await screen.findByText("Build generated")).toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fetcher.mock.calls[1]?.[1]?.body).toBe(
       fetcher.mock.calls[0]?.[1]?.body,
@@ -261,7 +266,7 @@ describe("BuilderWorkspace", () => {
         headers: { "content-type": "application/json" },
       }),
     );
-    expect(await screen.findByText("Build completed")).toBeInTheDocument();
+    expect(await screen.findByText("Build generated")).toBeInTheDocument();
   });
 
   it("warns when the generated project could not be persisted", async () => {
@@ -698,10 +703,55 @@ function issueReportFor(frame: HTMLIFrameElement): PreviewHealthReport {
   };
 }
 
+function healthyReportFor(frame: HTMLIFrameElement): PreviewHealthReport {
+  return {
+    channel: "forge:preview-health",
+    version: 2,
+    sessionId: previewSessionFrom(frame),
+    status: "healthy",
+    hasMeaningfulContent: true,
+    interactiveControls: 1,
+    forms: 0,
+    advertisedActions: 1,
+    wiredActions: 1,
+    advertisedForms: 0,
+    wiredForms: 0,
+    delegatedActionListeners: 0,
+    interactionCoverage: "complete",
+    issues: [],
+    reportedAt: 1_700_000_002_000,
+  };
+}
+
 function dispatchHealthMessage(frame: HTMLIFrameElement, data: unknown) {
+  type Handler = ((event: { data: unknown }) => void) | null;
+  const runtimePort = {
+    onmessage: null as Handler,
+    postMessage: (message: unknown) => {
+      act(() => parentPort.onmessage?.({ data: message }));
+    },
+  };
+  const parentPort = {
+    onmessage: null as Handler,
+    start: vi.fn(),
+    close: vi.fn(),
+    postMessage: (message: unknown) => runtimePort.onmessage?.({ data: message }),
+  };
+
   act(() => {
     window.dispatchEvent(
-      new MessageEvent("message", { data, source: frame.contentWindow }),
+      new MessageEvent("message", {
+        data: {
+          channel: "forge:preview-health-connect",
+          version: 2,
+          sessionId: previewSessionFrom(frame),
+          nonce: frame.dataset.healthNonce,
+          kind: "connect",
+        },
+        source: frame.contentWindow,
+        ports: [parentPort as unknown as MessagePort],
+      }),
     );
   });
+  runtimePort.postMessage(data);
 }

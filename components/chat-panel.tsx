@@ -14,6 +14,7 @@ import { SuggestedActions } from "@/components/suggested-actions";
 import type { BuildSummary } from "@/lib/build-summary";
 import type { GenerationPhase } from "@/hooks/use-generator";
 import type { Project } from "@/types/project";
+import type { PreviewHealthState } from "@/types/preview-health";
 
 export interface ExamplePrompt {
   label: string;
@@ -27,6 +28,7 @@ interface ChatPanelProps {
   phase: GenerationPhase;
   errorMessage?: string;
   buildSummary: BuildSummary | null;
+  previewHealthStatus?: PreviewHealthState["status"];
   examples: ExamplePrompt[];
   disabled: boolean;
   onExample: (prompt: string) => void;
@@ -65,20 +67,48 @@ function EmptyConversation({
   );
 }
 
-function BuildSummaryCard({ summary }: { summary: BuildSummary }) {
+function BuildSummaryCard({
+  summary,
+  previewHealthStatus,
+}: {
+  summary: BuildSummary;
+  previewHealthStatus: PreviewHealthState["status"];
+}) {
+  const verdict =
+    previewHealthStatus === "healthy"
+      ? {
+          title: "Build verified",
+          detail: "Runtime behavior verified",
+          Icon: Check,
+        }
+      : previewHealthStatus === "issues"
+        ? {
+            title: "Build needs repair",
+            detail: "Preview issues must be fixed",
+            Icon: AlertTriangle,
+          }
+        : previewHealthStatus === "unavailable"
+          ? {
+              title: "Build generated",
+              detail: "Runtime check unavailable",
+              Icon: AlertTriangle,
+            }
+          : {
+              title: "Build generated",
+              detail: "Verifying runtime behavior",
+              Icon: Sparkles,
+            };
+  const VerdictIcon = verdict.Icon;
+
   return (
     <section className="build-summary" aria-label="AI build summary">
       <div className="build-summary-title">
-        <span className="success-mark">
-          <Check size={12} />
+        <span className="success-mark" data-status={previewHealthStatus}>
+          <VerdictIcon size={12} />
         </span>
         <div>
-          <strong>Build completed</strong>
-          <span>
-            {summary.persisted
-              ? "Validated and saved locally"
-              : "Built successfully · Local save needs attention"}
-          </span>
+          <strong>{verdict.title}</strong>
+          <span>{verdict.detail}</span>
         </div>
       </div>
       <div className="build-summary-grid">
@@ -129,6 +159,7 @@ export function ChatPanel({
   phase,
   errorMessage,
   buildSummary,
+  previewHealthStatus = "checking",
   examples,
   disabled,
   onExample,
@@ -196,7 +227,10 @@ export function ChatPanel({
           ) : null}
 
           {project && buildSummary && phase !== "error" ? (
-            <BuildSummaryCard summary={buildSummary} />
+            <BuildSummaryCard
+              summary={buildSummary}
+              previewHealthStatus={previewHealthStatus}
+            />
           ) : null}
 
           {project ? (

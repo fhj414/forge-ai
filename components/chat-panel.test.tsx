@@ -31,6 +31,35 @@ const legacyBuildSummary: BuildSummary = {
 };
 
 describe("ChatPanel", () => {
+  it.each([
+    ["checking", "Build generated", "Verifying runtime behavior"],
+    ["healthy", "Build verified", "Runtime behavior verified"],
+    ["issues", "Build needs repair", "Preview issues must be fixed"],
+    ["unavailable", "Build generated", "Runtime check unavailable"],
+  ] as const)(
+    "shows the %s runtime verdict in the build summary",
+    (previewHealthStatus, title, detail) => {
+      render(
+        <ChatPanel
+          {...{ previewHealthStatus }}
+          project={legacyProject}
+          pendingPrompt=""
+          phase="idle"
+          buildSummary={legacyBuildSummary}
+          examples={[]}
+          disabled={false}
+          onExample={vi.fn()}
+          onRetry={vi.fn()}
+          onSuggestion={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText(title)).toBeInTheDocument();
+      expect(screen.getByText(detail)).toBeInTheDocument();
+      expect(screen.queryByText("Build completed")).not.toBeInTheDocument();
+    },
+  );
+
   it("labels markup-derived interaction counts as found elements", () => {
     render(
       <ChatPanel

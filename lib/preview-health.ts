@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   PREVIEW_HEALTH_CHANNEL,
+  PREVIEW_HEALTH_CONNECT_CHANNEL,
   PREVIEW_HEALTH_VERSION,
   type PreviewHealthIssue,
   type PreviewHealthReport,
@@ -37,7 +38,34 @@ const reportSchema = z
   })
   .strict();
 
-export { PREVIEW_HEALTH_CHANNEL, PREVIEW_HEALTH_VERSION };
+const connectionSchema = z
+  .object({
+    channel: z.literal(PREVIEW_HEALTH_CONNECT_CHANNEL),
+    version: z.literal(PREVIEW_HEALTH_VERSION),
+    sessionId: z.string().min(1).max(128),
+    nonce: z.string().min(1).max(128),
+    kind: z.literal("connect"),
+  })
+  .strict();
+
+export {
+  PREVIEW_HEALTH_CHANNEL,
+  PREVIEW_HEALTH_CONNECT_CHANNEL,
+  PREVIEW_HEALTH_VERSION,
+};
+
+export function isPreviewHealthConnectionMessage(
+  input: unknown,
+  expectedSessionId: string,
+  expectedNonce: string,
+): boolean {
+  const result = connectionSchema.safeParse(input);
+  return (
+    result.success &&
+    result.data.sessionId === expectedSessionId &&
+    result.data.nonce === expectedNonce
+  );
+}
 
 export function parsePreviewHealthMessage(
   input: unknown,
@@ -57,7 +85,7 @@ export function parsePreviewHealthMessage(
     report.wiredActions > report.advertisedActions ||
     report.wiredForms > report.advertisedForms ||
     report.advertisedActions > report.interactiveControls ||
-    report.advertisedForms !== report.forms
+    report.advertisedForms > report.forms
   ) {
     return null;
   }
@@ -78,6 +106,13 @@ export function parsePreviewHealthMessage(
           : "incomplete";
 
   if (report.interactionCoverage !== expectedCoverage) return null;
+  if (
+    (report.status === "healthy" &&
+      (!report.hasMeaningfulContent || report.interactionCoverage === "none")) ||
+    (report.status === "issues" && report.issues.length === 0)
+  ) {
+    return null;
+  }
   if (
     report.interactionCoverage === "incomplete" &&
     (report.status !== "issues" || report.issues.length === 0)

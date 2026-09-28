@@ -48,7 +48,7 @@ describe("requestGeneration", () => {
     await expect(requestGeneration(request, undefined, fetcher)).rejects.toEqual(
       new GenerationRequestError(
         "INVALID_MODEL_RESPONSE",
-        "The AI returned an invalid application. Please retry.",
+        "The AI could not produce a working interactive application after retrying. Please try again.",
       ),
     );
   });

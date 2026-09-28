@@ -48,7 +48,7 @@ describe("validateGeneratedAppQuality", () => {
     expect(result.correctiveMessage.length).toBeLessThanOrEqual(500);
   });
 
-  it("accepts static, non-interactive content without JavaScript", async () => {
+  it("rejects an application that contains no actionable control", async () => {
     const quality = (await import("@/lib/generated-app-quality").catch(
       () => undefined,
     )) as QualityModule | undefined;
@@ -56,13 +56,23 @@ describe("validateGeneratedAppQuality", () => {
     expect(quality).toBeDefined();
     if (!quality) return;
 
-    expect(quality.validateGeneratedAppQuality(staticApp)).toEqual({
-      violationCodes: [],
-      correctiveMessage: "",
-    });
+    const result = quality.validateGeneratedAppQuality(staticApp);
+
+    expect(result.violationCodes).toContain(
+      "APPLICATION_REQUIRES_ACTIONABLE_CONTROL",
+    );
+    expect(result.correctiveMessage).toContain(
+      "APPLICATION_REQUIRES_ACTIONABLE_CONTROL",
+    );
   });
 
-  it("does not treat hidden inputs as actionable content", async () => {
+  it.each([
+    ["hidden inputs", '<input type="hidden" name="token"><input hidden name="draft">'],
+    ["hidden buttons", "<button hidden>Save</button>"],
+    ["disabled controls", "<button disabled>Save</button><select disabled></select>"],
+    ["self-closing disabled controls", '<input id="save" disabled/>'],
+    ["an empty form", "<form><p>No fields or actions</p></form>"],
+  ])("does not accept %s as a real actionable control", async (_label, html) => {
     const quality = (await import("@/lib/generated-app-quality").catch(
       () => undefined,
     )) as QualityModule | undefined;
@@ -71,14 +81,207 @@ describe("validateGeneratedAppQuality", () => {
     if (!quality) return;
 
     expect(
+      quality.validateGeneratedAppQuality({ ...staticApp, html }).violationCodes,
+    ).toContain("APPLICATION_REQUIRES_ACTIONABLE_CONTROL");
+  });
+
+  it("accepts an enabled control with direct event wiring", async () => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
       quality.validateGeneratedAppQuality({
         ...staticApp,
-        html: '<section><input type="hidden" name="token"><input hidden name="draft"></section>',
+        html: '<main><button id="save">Save</button></main>',
+        javascript:
+          'document.querySelector("#save").addEventListener("click", () => {});',
       }),
     ).toEqual({
       violationCodes: [],
       correctiveMessage: "",
     });
+  });
+
+  it.each([
+    [
+      "a hidden ancestor",
+      '<main hidden><button id="save">Save</button></main>',
+      "",
+    ],
+    [
+      "a disabled fieldset",
+      '<fieldset disabled><button id="save">Save</button></fieldset>',
+      "",
+    ],
+    [
+      "an inert ancestor",
+      '<main inert><button id="save">Save</button></main>',
+      "",
+    ],
+    [
+      "template content",
+      '<template><button id="save">Save</button></template>',
+      "",
+    ],
+    [
+      "an HTML comment",
+      '<main><!-- <button id="save">Save</button> --></main>',
+      "",
+    ],
+  ])(
+    "rejects a page whose only apparent control is in %s",
+    async (_label, html, css) => {
+      const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+      expect(
+        quality.validateGeneratedAppQuality({
+          ...staticApp,
+          html,
+          css,
+          javascript:
+            'document.querySelector("#save").addEventListener("click", () => {});',
+        }).violationCodes,
+      ).toContain("APPLICATION_REQUIRES_ACTIONABLE_CONTROL");
+    },
+  );
+
+  it.each([
+    [
+      "an inline-hidden ancestor for runtime verification",
+      '<main style="display: none"><button id="save">Save</button></main>',
+      "",
+    ],
+    [
+      "a control hidden by generated CSS for runtime verification",
+      '<main><button id="save">Save</button></main>',
+      "#save { display: none; }",
+    ],
+    [
+      "a control hidden after a CSS comment for runtime verification",
+      '<main><button id="save">Save</button></main>',
+      "#save { /* generated note */ display: none; }",
+    ],
+    [
+      "a boolean-attribute word inside quoted text",
+      '<main><button id="save" title="currently disabled state">Save</button></main>',
+      "",
+    ],
+    [
+      "a later CSS override",
+      '<main><button id="save">Save</button></main>',
+      "button { display: none; } button { display: block; }",
+    ],
+    [
+      "an inapplicable media-query hide rule",
+      '<main><button id="save">Save</button></main>',
+      "@media (max-width: 0px) { button { display: none; } }",
+    ],
+  ])("accepts a real control with %s", async (_label, html, css) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        html,
+        css,
+        javascript:
+          'document.querySelector("#save").addEventListener("click", () => {});',
+      }),
+    ).toEqual({ violationCodes: [], correctiveMessage: "" });
+  });
+
+  it.each([
+    [
+      "missing listener arguments",
+      'document.querySelector("#save").addEventListener();',
+    ],
+    [
+      "an unrelated object",
+      '({}).addEventListener("click", () => {});',
+    ],
+    [
+      "an unrelated global event",
+      'window.addEventListener("load", () => {});',
+    ],
+  ])("rejects %s as control wiring", async (_label, javascript) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        html: '<main><button id="save">Save</button></main>',
+        javascript,
+      }).violationCodes,
+    ).toContain("ACTIONABLE_HTML_REQUIRES_EVENT_LISTENER");
+  });
+
+  it.each([
+    [
+      "a selector whose match can only be known at runtime",
+      'document.querySelector("#missing").addEventListener("click", () => {});',
+    ],
+    [
+      "a handler identifier resolved at runtime",
+      'document.querySelector("#save").addEventListener("click", missingHandler);',
+    ],
+    [
+      "an application-owned query receiver",
+      'app.querySelector("#save").addEventListener("click", () => {});',
+    ],
+    [
+      "a dynamically reassigned control alias",
+      'let save = document.querySelector("#save"); save = {}; save.addEventListener("click", () => {});',
+    ],
+  ])("defers %s to preview runtime verification", async (_label, javascript) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        html: '<main><button id="save">Save</button></main>',
+        javascript,
+      }),
+    ).toEqual({ violationCodes: [], correctiveMessage: "" });
+  });
+
+  it.each([
+    [
+      "a tracked control alias",
+      'const save = document.querySelector("#save"); save.addEventListener("click", () => {});',
+    ],
+    [
+      "delegated document wiring",
+      'document.addEventListener("click", () => {});',
+    ],
+    [
+      "a queried control collection",
+      'document.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {}));',
+    ],
+    [
+      "a direct-child selector",
+      'document.querySelector("main > button").addEventListener("click", () => {});',
+    ],
+    [
+      "a declared named handler",
+      'function handleSave() {} document.querySelector("#save").addEventListener("click", handleSave);',
+    ],
+    [
+      "a for-of collection binding",
+      'const buttons = document.querySelectorAll("button"); for (const button of buttons) { button.addEventListener("click", () => {}); }',
+    ],
+    [
+      "a class-name collection binding",
+      'for (const button of document.getElementsByClassName("save")) { button.addEventListener("click", () => {}); }',
+    ],
+  ])("accepts %s", async (_label, javascript) => {
+    const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
+
+    expect(
+      quality.validateGeneratedAppQuality({
+        ...staticApp,
+        html: '<main><button id="save" class="save">Save</button></main>',
+        javascript,
+      }),
+    ).toEqual({ violationCodes: [], correctiveMessage: "" });
   });
 
   it("does not count listener text in strings or comments as interactive wiring", async () => {
@@ -274,11 +477,8 @@ describe("validateGeneratedAppQuality", () => {
       quality.validateGeneratedAppQuality({
         ...staticApp,
         javascript: "const { fetch: request } = app; request('/api');",
-      }),
-    ).toEqual({
-      violationCodes: [],
-      correctiveMessage: "",
-    });
+      }).violationCodes,
+    ).not.toContain("JAVASCRIPT_NETWORK_API");
   });
 
   it.each([
@@ -300,11 +500,9 @@ describe("validateGeneratedAppQuality", () => {
     const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
 
     expect(
-      quality.validateGeneratedAppQuality({ ...staticApp, javascript }),
-    ).toEqual({
-      violationCodes: [],
-      correctiveMessage: "",
-    });
+      quality.validateGeneratedAppQuality({ ...staticApp, javascript })
+        .violationCodes,
+    ).not.toContain("JAVASCRIPT_NETWORK_API");
   });
 
   it.each(
@@ -326,11 +524,9 @@ describe("validateGeneratedAppQuality", () => {
     const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
 
     expect(
-      quality.validateGeneratedAppQuality({ ...staticApp, javascript }),
-    ).toEqual({
-      violationCodes: [],
-      correctiveMessage: "",
-    });
+      quality.validateGeneratedAppQuality({ ...staticApp, javascript })
+        .violationCodes,
+    ).not.toContain("JAVASCRIPT_NETWORK_API");
   });
 
   it("still detects forbidden references in destructuring default initializers", async () => {
@@ -371,18 +567,17 @@ describe("validateGeneratedAppQuality", () => {
   it("ignores forbidden API names that appear only in strings or comments", async () => {
     const quality = (await import("@/lib/generated-app-quality")) as QualityModule;
 
-    expect(
-      quality.validateGeneratedAppQuality({
-        ...staticApp,
-        javascript: [
-          'const note = "document.write( fetch?.( import( navigator.sendBeacon(";',
-          "// window['fetch']('/api')",
-          "/* document?.write('ignored') */",
-        ].join("\n"),
-      }),
-    ).toEqual({
-      violationCodes: [],
-      correctiveMessage: "",
+    const result = quality.validateGeneratedAppQuality({
+      ...staticApp,
+      javascript: [
+        'const note = "document.write( fetch?.( import( navigator.sendBeacon(";',
+        "// window['fetch']('/api')",
+        "/* document?.write('ignored') */",
+      ].join("\n"),
     });
+
+    expect(result.violationCodes).not.toContain("JAVASCRIPT_NETWORK_API");
+    expect(result.violationCodes).not.toContain("JAVASCRIPT_DOCUMENT_WRITE");
+    expect(result.violationCodes).not.toContain("JAVASCRIPT_MODULE_IMPORT");
   });
 });

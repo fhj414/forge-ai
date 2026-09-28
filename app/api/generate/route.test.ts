@@ -18,6 +18,7 @@ function makeRequest(body: unknown) {
 
 describe("POST /api/generate", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     process.env.AI_API_KEY = envSnapshot.AI_API_KEY;
@@ -72,9 +73,10 @@ describe("POST /api/generate", () => {
                 content: JSON.stringify({
                   title: "Task Orbit",
                   summary: "A focused task manager.",
-                  html: "<main>Tasks</main>",
+                  html: '<main>Tasks<button id="add">Add task</button></main>',
                   css: "body{}",
-                  javascript: "",
+                  javascript:
+                    'document.querySelector("#add").addEventListener("click", () => {});',
                   changes: ["Task list"],
                   suggestions: ["Add keyboard shortcuts"],
                 }),
@@ -100,11 +102,13 @@ describe("POST /api/generate", () => {
     process.env.AI_API_KEY = "test-key";
     process.env.AI_API_BASE = "https://llm.example/v1";
     process.env.AI_MODEL = "forge-test";
-    vi.spyOn(Date, "now").mockReturnValueOnce(100).mockReturnValueOnce(345);
+    vi.useFakeTimers();
+    vi.setSystemTime(100);
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
+      vi.fn<typeof fetch>().mockImplementation(async () => {
+        vi.setSystemTime(345);
+        return new Response(
           JSON.stringify({
             choices: [
               {
@@ -112,9 +116,10 @@ describe("POST /api/generate", () => {
                   content: `\`\`\`json\n${JSON.stringify({
                     title: "Task Orbit",
                     summary: "A focused task manager.",
-                    html: "<main>\né</main>",
+                    html: '<main><button id="save">Save</button>\né</main>',
                     css: "body{}",
-                    javascript: "console.log('ok')",
+                    javascript:
+                      'document.querySelector("#save").addEventListener("click", () => {});',
                     changes: ["Task list"],
                     suggestions: ["Add keyboard shortcuts"],
                   })}\n\`\`\``,
@@ -123,8 +128,8 @@ describe("POST /api/generate", () => {
             ],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      ),
+        );
+      }),
     );
 
     const response = await POST(makeRequest({ prompt: "Build a task manager" }));
@@ -133,9 +138,10 @@ describe("POST /api/generate", () => {
     await expect(response.json()).resolves.toEqual({
       title: "Task Orbit",
       summary: "A focused task manager.",
-      html: "<main>\né</main>",
+      html: '<main><button id="save">Save</button>\né</main>',
       css: "body{}",
-      javascript: "console.log('ok')",
+      javascript:
+        'document.querySelector("#save").addEventListener("click", () => {});',
       changes: ["Task list"],
       suggestions: ["Add keyboard shortcuts"],
       generationMetadata: {
@@ -143,7 +149,7 @@ describe("POST /api/generate", () => {
         durationMs: 245,
         kind: "initial",
         codeLines: 4,
-        codeBytes: 39,
+        codeBytes: 121,
         schemaValidated: true,
       },
     });
@@ -163,9 +169,10 @@ describe("POST /api/generate", () => {
                   content: JSON.stringify({
                     title: "Task Orbit",
                     summary: "A refined task manager.",
-                    html: "<main>Tasks</main>",
+                    html: '<main>Tasks<button id="filter">Filter</button></main>',
                     css: "body{}",
-                    javascript: "",
+                    javascript:
+                      'document.querySelector("#filter").addEventListener("click", () => {});',
                     changes: ["Task filters"],
                     suggestions: [],
                   }),
@@ -217,17 +224,19 @@ describe("POST /api/generate", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(inertResponse())
+      .mockResolvedValueOnce(inertResponse())
       .mockResolvedValueOnce(inertResponse());
     vi.stubGlobal("fetch", fetcher);
 
     const response = await POST(makeRequest({ prompt: "Build a task manager" }));
 
     expect(response.status).toBe(502);
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     await expect(response.json()).resolves.toEqual({
       error: {
         code: "INVALID_MODEL_RESPONSE",
-        message: "The AI returned an invalid application. Please retry.",
+        message:
+          "The AI could not produce a working interactive application after retrying. Please try again.",
       },
     });
   });

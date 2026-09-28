@@ -60,12 +60,52 @@ describe("PreviewPanel", () => {
   });
 
   it("shows a report received from the current preview and session", () => {
-    render(<PreviewPanel project={project} />);
+    const onHealthStateChange = vi.fn();
+    render(<PreviewPanel {...{ onHealthStateChange }} project={project} />);
     const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
 
     dispatchHealthMessage(frame, reportFor(frame, { status: "healthy" }));
 
     expect(screen.getByText("Runtime check passed")).toBeInTheDocument();
+    expect(onHealthStateChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "healthy" }),
+    );
+  });
+
+  it("ignores a forged health report sent directly by generated window code", () => {
+    render(<PreviewPanel project={project} />);
+    const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
+
+    dispatchDirectHealthMessage(frame, reportFor(frame, { status: "healthy" }));
+
+    expect(screen.getByText("Checking preview…")).toBeInTheDocument();
+    expect(screen.queryByText("Runtime check passed")).not.toBeInTheDocument();
+  });
+
+  it("rejects a generated-code health channel without the parent nonce", () => {
+    render(<PreviewPanel project={project} />);
+    const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
+    const { parentPort, runtimePort } = createTestHealthChannel();
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            channel: "forge:preview-health-connect",
+            version: 2,
+            sessionId: sessionFrom(frame),
+            nonce: "forged-nonce",
+            kind: "connect",
+          },
+          source: frame.contentWindow,
+          ports: [parentPort as unknown as MessagePort],
+        }),
+      );
+    });
+    runtimePort.postMessage(reportFor(frame, { status: "healthy" }));
+
+    expect(screen.getByText("Checking preview…")).toBeInTheDocument();
+    expect(screen.queryByText("Runtime check passed")).not.toBeInTheDocument();
   });
 
   it("does not show a passed runtime headline for inert advertised controls", () => {
@@ -183,13 +223,13 @@ describe("PreviewPanel", () => {
     const frame = screen.getByTitle("Generated app preview") as HTMLIFrameElement;
     const finalReport = reportFor(frame, { status: "healthy" });
 
-    dispatchHealthMessage(frame, finalReport);
+    const runtimePort = dispatchHealthMessage(frame, finalReport);
     expect(screen.getByText("Runtime check passed")).toBeInTheDocument();
 
     fireEvent.load(frame);
     expect(screen.getByText("Checking preview…")).toBeInTheDocument();
 
-    dispatchHealthMessage(frame, {
+    runtimePort.postMessage({
       ...finalReport,
       reportedAt: finalReport.reportedAt + 1,
     });
@@ -233,8 +273,47 @@ function dispatchHealthMessage(
   data: unknown,
   source: MessageEventSource | null = frame.contentWindow,
 ) {
-  const event = new MessageEvent("message", { data, source });
+  const { parentPort, runtimePort } = createTestHealthChannel();
+  const event = new MessageEvent("message", {
+    data: {
+      channel: "forge:preview-health-connect",
+      version: 2,
+      sessionId: sessionFrom(frame),
+      nonce: frame.dataset.healthNonce,
+      kind: "connect",
+    },
+    source,
+    ports: [parentPort as unknown as MessagePort],
+  });
   act(() => {
     window.dispatchEvent(event);
   });
+  runtimePort.postMessage(data);
+  return runtimePort;
+}
+
+function dispatchDirectHealthMessage(frame: HTMLIFrameElement, data: unknown) {
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent("message", { data, source: frame.contentWindow }),
+    );
+  });
+}
+
+function createTestHealthChannel() {
+  type Handler = ((event: { data: unknown }) => void) | null;
+  const parentPort = {
+    onmessage: null as Handler,
+    start: vi.fn(),
+    close: vi.fn(),
+    postMessage: (data: unknown) => runtimePort.onmessage?.({ data }),
+  };
+  const runtimePort = {
+    onmessage: null as Handler,
+    postMessage: (data: unknown) => {
+      act(() => parentPort.onmessage?.({ data }));
+    },
+  };
+
+  return { parentPort, runtimePort };
 }

@@ -1,4 +1,6 @@
 export const PREVIEW_HEALTH_CHANNEL = "forge:preview-health" as const;
+export const PREVIEW_HEALTH_CONNECT_CHANNEL =
+  "forge:preview-health-connect" as const;
 export const PREVIEW_HEALTH_VERSION = 2 as const;
 
 export type PreviewInteractionCoverage =

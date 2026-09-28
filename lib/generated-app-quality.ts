@@ -1,8 +1,10 @@
 import { parse, type Node } from "acorn";
+import { JSDOM, VirtualConsole } from "jsdom";
 
 import type { GeneratedApp } from "@/types/ai";
 
 export const GENERATED_APP_QUALITY_VIOLATION_CODES = [
+  "APPLICATION_REQUIRES_ACTIONABLE_CONTROL",
   "HTML_DOCUMENT_WRAPPER",
   "HTML_SCRIPT_WRAPPER",
   "HTML_STYLE_WRAPPER",
@@ -32,72 +34,48 @@ const DIRECT_NETWORK_IDENTIFIERS = new Set([
   "EventSource",
 ]);
 const GLOBAL_OBJECT_IDENTIFIERS = new Set(["window", "globalThis", "self"]);
+const INTERACTION_EVENT_TYPES = new Set([
+  "change",
+  "click",
+  "input",
+  "keydown",
+  "keypress",
+  "keyup",
+  "submit",
+]);
 
-interface ScannedHtmlTag {
-  name: string;
-  attributes: string;
+interface GeneratedDomInspection {
+  dom: JSDOM;
+  actionableControls: Element[];
+  hasInlineEventHandler: boolean;
 }
 
-function scanHtmlTags(html: string): ScannedHtmlTag[] {
-  const tags: ScannedHtmlTag[] = [];
-  let cursor = 0;
-
-  while (cursor < html.length) {
-    const tagStart = html.indexOf("<", cursor);
-    if (tagStart < 0) break;
-
-    let nameStart = tagStart + 1;
-    while (/\s/.test(html[nameStart] ?? "")) nameStart += 1;
-
-    const nameMatch = /^[a-z][\w:-]*/i.exec(html.slice(nameStart));
-    if (!nameMatch) {
-      cursor = tagStart + 1;
-      continue;
-    }
-
-    const attributesStart = nameStart + nameMatch[0].length;
-    let quote: '"' | "'" | undefined;
-    let tagEnd = attributesStart;
-    for (; tagEnd < html.length; tagEnd += 1) {
-      const character = html[tagEnd];
-      if (quote) {
-        if (character === quote) quote = undefined;
-      } else if (character === '"' || character === "'") {
-        quote = character;
-      } else if (character === ">") {
-        break;
-      }
-    }
-
-    if (tagEnd >= html.length) break;
-    tags.push({
-      name: nameMatch[0].toLowerCase(),
-      attributes: html.slice(attributesStart, tagEnd),
-    });
-    cursor = tagEnd + 1;
-  }
-
-  return tags;
-}
-
-function hasActionableInput(tags: ScannedHtmlTag[]) {
-  return tags.some((tag) => {
-    if (tag.name !== "input") return false;
-    const { attributes } = tag;
-    return !(
-      /\btype\s*=\s*(?:"hidden"|'hidden'|hidden\b)/i.test(attributes) ||
-      /(?:^|\s)hidden(?:\s|=|$)/i.test(attributes)
-    );
+function inspectGeneratedDom(html: string): GeneratedDomInspection {
+  const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
+    virtualConsole: new VirtualConsole(),
   });
+  const { document } = dom.window;
+  document.body.innerHTML = html;
+
+  const elements = Array.from(document.body.querySelectorAll("*"));
+  const hasInlineEventHandler = elements.some((element) =>
+    Array.from(element.attributes).some((attribute) =>
+      /^on[a-z][\w:-]*$/i.test(attribute.name),
+    ),
+  );
+  const actionableControls = Array.from(
+    document.body.querySelectorAll("button, input, select, textarea"),
+  ).filter((element) => isStructurallyActionableControl(element));
+
+  return { dom, actionableControls, hasInlineEventHandler };
 }
 
-function hasActionableHtml(html: string, tags: ScannedHtmlTag[]) {
-  return /<(?:button|form|select|textarea)\b/i.test(html) || hasActionableInput(tags);
-}
-
-function hasInlineEventHandler(tags: ScannedHtmlTag[]) {
-  return tags.some((tag) =>
-    /(?:^|\s|\/)on[a-z][\w:-]*\s*=/i.test(tag.attributes),
+function isStructurallyActionableControl(element: Element) {
+  return !(
+    element.closest("template, [hidden], [inert]") ||
+    element.matches(":disabled") ||
+    (element.tagName === "INPUT" &&
+      (element.getAttribute("type") ?? "text").toLowerCase() === "hidden")
   );
 }
 
@@ -189,6 +167,7 @@ function walkAst(
     grandparent?: AstNode,
     bindingPosition?: boolean,
   ) => void,
+  leave?: (node: AstNode) => void,
   parent?: AstNode,
   parentKey?: string,
   grandparent?: AstNode,
@@ -201,6 +180,7 @@ function walkAst(
       walkAst(
         value,
         visit,
+        leave,
         node,
         key,
         parent,
@@ -215,6 +195,7 @@ function walkAst(
         walkAst(
           child,
           visit,
+          leave,
           node,
           key,
           parent,
@@ -223,6 +204,8 @@ function walkAst(
       }
     }
   }
+
+  leave?.(node);
 }
 
 function unwrapChain(node: unknown): AstNode | undefined {
@@ -385,7 +368,39 @@ function isReferenceIdentifier(
   return true;
 }
 
-function analyzeJavaScript(program?: AstNode) {
+function staticString(node: unknown): string | undefined {
+  const unwrapped = unwrapChain(node);
+  if (!unwrapped) return undefined;
+  if (unwrapped.type === "Literal" && typeof unwrapped.value === "string") {
+    return unwrapped.value;
+  }
+  if (
+    unwrapped.type === "TemplateLiteral" &&
+    Array.isArray(unwrapped.expressions) &&
+    unwrapped.expressions.length === 0 &&
+    Array.isArray(unwrapped.quasis)
+  ) {
+    const quasi = unwrapped.quasis[0];
+    const cooked = isAstNode(quasi)
+      ? (quasi.value as { cooked?: unknown } | undefined)?.cooked
+      : undefined;
+    return typeof cooked === "string" ? cooked : undefined;
+  }
+  return undefined;
+}
+
+function isPlausibleListener(node: unknown) {
+  const listener = unwrapChain(node);
+  if (!listener) return false;
+  return (
+    listener.type === "ArrowFunctionExpression" ||
+    listener.type === "FunctionExpression" ||
+    (listener.type === "Identifier" && typeof listener.name === "string") ||
+    listener.type === "MemberExpression"
+  );
+}
+
+function analyzeJavaScript(program: AstNode | undefined) {
   let hasEventListenerWiring = false;
   let usesBrowserNetworkApi = false;
   let usesModuleImport = false;
@@ -453,6 +468,37 @@ function analyzeJavaScript(program?: AstNode) {
     registerObjectPattern(unwrappedPattern, sourcePath);
   };
 
+  const hasPlausibleEventTarget = (value: unknown) => {
+    const receiver = unwrapChain(value);
+    if (!receiver) return false;
+    return ![
+      "ArrayExpression",
+      "ArrowFunctionExpression",
+      "FunctionExpression",
+      "Literal",
+      "ObjectExpression",
+    ].includes(receiver.type);
+  };
+
+  const isValidInteractionListenerCall = (node: AstNode) => {
+    const callee = unwrapChain(node.callee);
+    if (
+      callee?.type !== "MemberExpression" ||
+      staticPropertyName(callee) !== "addEventListener" ||
+      !Array.isArray(node.arguments)
+    ) {
+      return false;
+    }
+
+    const eventType = staticString(node.arguments[0]);
+    return Boolean(
+      eventType &&
+        INTERACTION_EVENT_TYPES.has(eventType) &&
+        isPlausibleListener(node.arguments[1]) &&
+        hasPlausibleEventTarget(callee.object),
+    );
+  };
+
   walkAst(program, (node, parent, parentKey, grandparent, bindingPosition) => {
     if (node.type === "VariableDeclarator") {
       registerDestructuredAliases(node.id, node.init);
@@ -467,12 +513,7 @@ function analyzeJavaScript(program?: AstNode) {
     }
 
     if (node.type === "CallExpression") {
-      const callee = unwrapChain(node.callee);
-      if (
-        (callee?.type === "Identifier" && callee.name === "addEventListener") ||
-        (callee?.type === "MemberExpression" &&
-          staticPropertyName(callee) === "addEventListener")
-      ) {
+      if (isValidInteractionListenerCall(node)) {
         hasEventListenerWiring = true;
       }
     }
@@ -533,13 +574,18 @@ export function validateGeneratedAppQuality(
 ): GeneratedAppQualityResult {
   const violationCodes: GeneratedAppQualityViolationCode[] = [];
   const { html, javascript } = app;
-  const htmlTags = scanHtmlTags(html);
-  const hasInteractiveContent = hasActionableHtml(html, htmlTags);
+  const domInspection = inspectGeneratedDom(html);
+  const hasInteractiveContent = domInspection.actionableControls.length > 0;
   const parsedJavaScript =
     javascript.trim().length > 0
       ? parseClassicScript(javascript)
       : { syntaxError: false };
-  const javascriptAnalysis = analyzeJavaScript(parsedJavaScript.program);
+  let javascriptAnalysis: ReturnType<typeof analyzeJavaScript>;
+  try {
+    javascriptAnalysis = analyzeJavaScript(parsedJavaScript.program);
+  } finally {
+    domInspection.dom.window.close();
+  }
 
   if (/<\s*\/?\s*(?:html|head|body)\b/i.test(html)) {
     violationCodes.push("HTML_DOCUMENT_WRAPPER");
@@ -553,8 +599,12 @@ export function validateGeneratedAppQuality(
     violationCodes.push("HTML_STYLE_WRAPPER");
   }
 
-  if (hasInlineEventHandler(htmlTags)) {
+  if (domInspection.hasInlineEventHandler) {
     violationCodes.push("HTML_INLINE_EVENT_HANDLER");
+  }
+
+  if (!hasInteractiveContent) {
+    violationCodes.push("APPLICATION_REQUIRES_ACTIONABLE_CONTROL");
   }
 
   if (hasInteractiveContent && javascript.trim().length === 0) {
@@ -590,6 +640,6 @@ export function validateGeneratedAppQuality(
     correctiveMessage:
       violationCodes.length === 0
         ? ""
-        : `Correct the JSON artifact. Fix: ${violationCodes.join(", ")}. Return body-only HTML, safe syntactically valid browser JavaScript, and addEventListener wiring for actionable controls.`,
+        : `Regenerate the complete JSON application. Fix: ${violationCodes.join(", ")}. Include at least one enabled, visible button, input, select, or textarea; return body-only HTML, safe valid browser JavaScript, and addEventListener wiring for actionable controls.`,
   };
 }

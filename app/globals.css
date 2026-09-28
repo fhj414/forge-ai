@@ -540,6 +540,24 @@ textarea:focus-visible {
   background: var(--accent-deep);
 }
 
+.success-mark[data-status="checking"] {
+  border-color: var(--line-bright);
+  color: var(--text-soft);
+  background: var(--panel-soft);
+}
+
+.success-mark[data-status="issues"] {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+}
+
+.success-mark[data-status="unavailable"] {
+  border-color: #756a2e;
+  color: #e8d45c;
+  background: #29250f;
+}
+
 .build-summary-title strong,
 .build-summary-title span {
   display: block;

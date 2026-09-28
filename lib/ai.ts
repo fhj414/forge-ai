@@ -57,7 +57,10 @@ function isAbortError(error: unknown) {
 }
 
 const INVALID_MODEL_RESPONSE_CORRECTION =
-  "Correct the JSON artifact. Fix: INVALID_MODEL_RESPONSE. Return only a complete app payload that follows the required schema.";
+  "Regenerate the complete JSON application from scratch. Fix: INVALID_MODEL_RESPONSE. Return only a complete app payload that follows the required schema and includes a working interactive control.";
+
+const MAX_TRANSIENT_RETRIES = 1;
+const MAX_CORRECTIVE_RETRIES = 2;
 
 export async function generateApplication(
   input: GenerateRequest,
@@ -72,9 +75,11 @@ export async function generateApplication(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? 55_000);
   let correctiveMessage: string | null = null;
+  let transientRetries = 0;
+  let correctiveRetries = 0;
 
   try {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    while (true) {
       try {
         const requestMessages = correctiveMessage
           ? [...messages, { role: "user", content: correctiveMessage }]
@@ -96,7 +101,8 @@ export async function generateApplication(
 
         if (!response.ok) {
           const retryable = response.status === 429 || response.status >= 500;
-          if (retryable && attempt === 0) {
+          if (retryable && transientRetries < MAX_TRANSIENT_RETRIES) {
+            transientRetries += 1;
             continue;
           }
 
@@ -117,7 +123,8 @@ export async function generateApplication(
         const quality = validateGeneratedAppQuality(app);
 
         if (quality.violationCodes.length > 0) {
-          if (attempt === 0) {
+          if (correctiveRetries < MAX_CORRECTIVE_RETRIES) {
+            correctiveRetries += 1;
             correctiveMessage = quality.correctiveMessage;
             continue;
           }
@@ -128,8 +135,9 @@ export async function generateApplication(
         return app;
       } catch (error) {
         if (error instanceof InvalidModelResponseError) {
-          if (attempt === 0) {
-            correctiveMessage ??= INVALID_MODEL_RESPONSE_CORRECTION;
+          if (correctiveRetries < MAX_CORRECTIVE_RETRIES) {
+            correctiveRetries += 1;
+            correctiveMessage = INVALID_MODEL_RESPONSE_CORRECTION;
             continue;
           }
 
@@ -144,7 +152,8 @@ export async function generateApplication(
           throw new AIClientError("AI_TIMEOUT", "The AI request timed out.");
         }
 
-        if (attempt === 0) {
+        if (transientRetries < MAX_TRANSIENT_RETRIES) {
+          transientRetries += 1;
           continue;
         }
 
@@ -158,5 +167,4 @@ export async function generateApplication(
     clearTimeout(timeout);
   }
 
-  throw new AIClientError("AI_UPSTREAM_ERROR", "AI generation failed.");
 }

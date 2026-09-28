@@ -9,12 +9,17 @@ import {
   Smartphone,
   Tablet,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CodeViewer } from "@/components/code-viewer";
 import { PreviewHealth } from "@/components/preview-health";
 import { downloadProjectHtml } from "@/lib/export-project";
-import { parsePreviewHealthMessage } from "@/lib/preview-health";
+import {
+  PREVIEW_HEALTH_CONNECT_CHANNEL,
+  PREVIEW_HEALTH_VERSION,
+  isPreviewHealthConnectionMessage,
+  parsePreviewHealthMessage,
+} from "@/lib/preview-health";
 import { composePreviewDocument } from "@/lib/preview";
 import { createId } from "@/lib/utils";
 import type { AppCode } from "@/types/ai";
@@ -42,6 +47,7 @@ export function PreviewPanel({
   onOpenVersionHistory,
   onDirtyChange,
   onRepair,
+  onHealthStateChange,
   repairDisabled = false,
 }: {
   project: Project | null;
@@ -51,21 +57,39 @@ export function PreviewPanel({
   onOpenVersionHistory?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onRepair?: (report: PreviewHealthReport) => void;
+  onHealthStateChange?: (state: PreviewHealthState | null) => void;
   repairDisabled?: boolean;
 }) {
   const [mode, setMode] = useState<PanelMode>("preview");
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [retryCount, setRetryCount] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const healthPortRef = useRef<{ sessionId: string; port: MessagePort } | null>(
+    null,
+  );
   const hasProject = Boolean(project);
   const sessionKey = `${project?.id ?? "none"}:${project?.updatedAt ?? "none"}:${retryCount}`;
   const diagnosticSession = useMemo(
-    () => ({ id: createId("preview-health"), key: sessionKey }),
+    () => ({
+      id: createId("preview-health"),
+      key: sessionKey,
+      nonce: createId("health-channel"),
+    }),
     [sessionKey],
   );
   const sessionId = diagnosticSession.id;
+  const healthConnectionNonce = diagnosticSession.nonce;
   const [healthState, setHealthState] = useState<PreviewHealthState>(() =>
     checkingState(sessionId),
+  );
+  const healthStateRef = useRef<PreviewHealthState>(healthState);
+  const publishHealthState = useCallback(
+    (state: PreviewHealthState) => {
+      healthStateRef.current = state;
+      setHealthState(state);
+      onHealthStateChange?.(state);
+    },
+    [onHealthStateChange],
   );
   const srcDoc = useMemo(
     () =>
@@ -78,30 +102,75 @@ export function PreviewPanel({
     healthState.sessionId === sessionId ? healthState : checkingState(sessionId);
 
   useEffect(() => {
-    function receivePreviewHealth(event: MessageEvent) {
+    function receivePreviewHealthConnection(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) return;
+      if (
+        !isPreviewHealthConnectionMessage(
+          event.data,
+          sessionId,
+          healthConnectionNonce,
+        )
+      ) {
+        return;
+      }
+      if (healthPortRef.current?.sessionId === sessionId) return;
 
-      const report = parsePreviewHealthMessage(event.data, sessionId);
-      if (report) setHealthState(report);
+      const port = event.ports[0];
+      if (!port) return;
+      healthPortRef.current?.port.close();
+      healthPortRef.current = { sessionId, port };
+      port.onmessage = (portEvent) => {
+        const report = parsePreviewHealthMessage(portEvent.data, sessionId);
+        if (report) publishHealthState(report);
+      };
+      port.start();
+      port.postMessage({
+        channel: PREVIEW_HEALTH_CONNECT_CHANNEL,
+        version: PREVIEW_HEALTH_VERSION,
+        sessionId,
+        nonce: healthConnectionNonce,
+        kind: "ack",
+      });
     }
 
-    window.addEventListener("message", receivePreviewHealth);
-    return () => window.removeEventListener("message", receivePreviewHealth);
-  }, [sessionId]);
+    window.addEventListener("message", receivePreviewHealthConnection);
+    iframeRef.current?.contentWindow?.postMessage({
+      channel: PREVIEW_HEALTH_CONNECT_CHANNEL,
+      version: PREVIEW_HEALTH_VERSION,
+      sessionId,
+      nonce: healthConnectionNonce,
+      kind: "request",
+    }, "*");
+    return () => {
+      window.removeEventListener("message", receivePreviewHealthConnection);
+      if (healthPortRef.current?.sessionId === sessionId) {
+        healthPortRef.current.port.close();
+        healthPortRef.current = null;
+      }
+    };
+  }, [healthConnectionNonce, publishHealthState, sessionId]);
+
+  useEffect(() => {
+    if (!hasProject) {
+      onHealthStateChange?.(null);
+      return;
+    }
+
+    onHealthStateChange?.(checkingState(sessionId));
+  }, [hasProject, onHealthStateChange, sessionId]);
 
   useEffect(() => {
     if (!hasProject) return;
 
     const timeout = window.setTimeout(() => {
-      setHealthState((current) =>
-        current.sessionId !== sessionId || current.status === "checking"
-          ? { status: "unavailable", sessionId }
-          : current,
-      );
+      const current = healthStateRef.current;
+      if (current.sessionId !== sessionId || current.status === "checking") {
+        publishHealthState({ status: "unavailable", sessionId });
+      }
     }, 3_000);
 
     return () => window.clearTimeout(timeout);
-  }, [hasProject, sessionId]);
+  }, [hasProject, publishHealthState, sessionId]);
 
   function applyCode(code: AppCode) {
     onApplyCode(code);
@@ -214,7 +283,17 @@ export function PreviewPanel({
                   title="Generated app preview"
                   sandbox="allow-scripts allow-forms"
                   srcDoc={srcDoc}
-                  onLoad={() => setHealthState(checkingState(sessionId))}
+                  data-health-nonce={healthConnectionNonce}
+                  onLoad={() => {
+                    publishHealthState(checkingState(sessionId));
+                    iframeRef.current?.contentWindow?.postMessage({
+                      channel: PREVIEW_HEALTH_CONNECT_CHANNEL,
+                      version: PREVIEW_HEALTH_VERSION,
+                      sessionId,
+                      nonce: healthConnectionNonce,
+                      kind: "request",
+                    }, "*");
+                  }}
                 />
               </div>
             </div>

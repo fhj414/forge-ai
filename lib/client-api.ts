@@ -74,7 +74,7 @@ export async function requestGeneration(
   } catch {
     throw new GenerationRequestError(
       "INVALID_MODEL_RESPONSE",
-      "The AI returned an invalid application. Please retry.",
+      "The AI could not produce a working interactive application after retrying. Please try again.",
     );
   }
 }

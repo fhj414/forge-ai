@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     if (error instanceof InvalidModelResponseError) {
       return errorResponse(
         "INVALID_MODEL_RESPONSE",
-        "The AI returned an invalid application. Please retry.",
+        "The AI could not produce a working interactive application after retrying. Please try again.",
         502,
       );
     }

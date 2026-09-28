@@ -24,9 +24,10 @@ const config = {
 const validContent = JSON.stringify({
   title: "Dark Ledger",
   summary: "A dark expense dashboard with a monthly chart.",
-  html: "<main>Dark ledger</main>",
+  html: '<main>Dark ledger<button id="theme">Toggle theme</button></main>',
   css: "body { background: #09090b; }",
-  javascript: "console.log('dark')",
+  javascript:
+    'document.querySelector("#theme").addEventListener("click", () => {});',
   changes: ["Dark theme", "Monthly chart"],
   suggestions: ["Add CSV export"],
 });
@@ -143,16 +144,17 @@ describe("generateApplication", () => {
     }
   });
 
-  it("retries malformed model output once before rejecting it", async () => {
+  it("uses two bounded corrections before rejecting malformed model output", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(completion("not valid json"))
       .mockResolvedValueOnce(completion("not valid json"))
       .mockResolvedValueOnce(completion("not valid json"));
 
     await expect(generateApplication(request, config, fetcher)).rejects.toBeInstanceOf(
       InvalidModelResponseError,
     );
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
   it("corrects a quality-gate rejection in one bounded second attempt", async () => {
@@ -185,15 +187,75 @@ describe("generateApplication", () => {
     );
   });
 
-  it("rejects after the corrective attempt also fails quality validation", async () => {
+  it("recovers when the second quality correction returns a valid app", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
+      .mockResolvedValueOnce(completion());
+
+    await expect(generateApplication(request, config, fetcher)).resolves.toMatchObject({
+      title: "Dark Ledger",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("replaces stale quality guidance after malformed corrective output", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
+      .mockResolvedValueOnce(completion("not valid json"))
+      .mockResolvedValueOnce(completion());
+
+    await expect(generateApplication(request, config, fetcher)).resolves.toMatchObject({
+      title: "Dark Ledger",
+    });
+    const thirdBody = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body)) as {
+      messages: { role: string; content: string }[];
+    };
+    const correction = thirdBody.messages.at(-1)?.content ?? "";
+
+    expect(correction).toContain("INVALID_MODEL_RESPONSE");
+    expect(correction).not.toContain("ACTIONABLE_HTML_REQUIRES_JAVASCRIPT");
+  });
+
+  it("keeps quality-correction retries independent from a transient retry", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
+      .mockResolvedValueOnce(completion());
+
+    await expect(generateApplication(request, config, fetcher)).resolves.toMatchObject({
+      title: "Dark Ledger",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("caps the combined transient and quality retry budget at four requests", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
       .mockResolvedValueOnce(completion(inertInteractiveContent))
       .mockResolvedValueOnce(completion(inertInteractiveContent));
 
     await expect(generateApplication(request, config, fetcher)).rejects.toBeInstanceOf(
       InvalidModelResponseError,
     );
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it("rejects after both quality corrections fail validation", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
+      .mockResolvedValueOnce(completion(inertInteractiveContent))
+      .mockResolvedValueOnce(completion(inertInteractiveContent));
+
+    await expect(generateApplication(request, config, fetcher)).rejects.toBeInstanceOf(
+      InvalidModelResponseError,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 });

@@ -15,7 +15,7 @@ import { useGenerator } from "@/hooks/use-generator";
 import { useProjects } from "@/hooks/use-projects";
 import { analyzeBuild } from "@/lib/build-summary";
 import { buildPreviewRepairPrompt } from "@/lib/preview-health";
-import type { PreviewHealthReport } from "@/types/preview-health";
+import type { PreviewHealthReport, PreviewHealthState } from "@/types/preview-health";
 
 interface GenerationIntent {
   requestPrompt: string;
@@ -54,6 +54,8 @@ export function BuilderWorkspace() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [hasUnsavedCode, setHasUnsavedCode] = useState(false);
+  const [previewHealthState, setPreviewHealthState] =
+    useState<PreviewHealthState | null>(null);
   const projectState = useProjects();
   const generator = useGenerator();
   const composerPrompt =
@@ -106,6 +108,7 @@ export function BuilderWorkspace() {
     });
 
     if (result) {
+      setPreviewHealthState(null);
       projectState.commitGeneration(result, displayPrompt, intent.revisionSource);
       setPendingPrompt("");
       setPendingIntent(null);
@@ -129,6 +132,7 @@ export function BuilderWorkspace() {
     setPendingPrompt("");
     setPendingIntent(null);
     setHasUnsavedCode(false);
+    setPreviewHealthState(null);
     setVersionHistoryOpen(false);
   }
 
@@ -140,6 +144,7 @@ export function BuilderWorkspace() {
     setPendingPrompt("");
     setPendingIntent(null);
     setHasUnsavedCode(false);
+    setPreviewHealthState(null);
     setHistoryOpen(false);
     setVersionHistoryOpen(false);
   }
@@ -156,6 +161,7 @@ export function BuilderWorkspace() {
     setPendingPrompt("");
     setPendingIntent(null);
     setHasUnsavedCode(false);
+    setPreviewHealthState(null);
     setVersionHistoryOpen(false);
   }
 
@@ -178,6 +184,7 @@ export function BuilderWorkspace() {
             phase={generator.phase}
             errorMessage={generator.error?.message}
             buildSummary={buildSummary}
+            previewHealthStatus={previewHealthState?.status ?? "checking"}
             examples={EXAMPLES}
             disabled={
               !projectState.hydrated || generator.isGenerating || hasUnsavedCode
@@ -221,11 +228,15 @@ export function BuilderWorkspace() {
           project={projectState.currentProject}
           disabled={generator.isGenerating}
           versionHistoryDisabled={generator.isGenerating || hasUnsavedCode}
-          onApplyCode={projectState.updateCurrentProject}
+          onApplyCode={(code) => {
+            setPreviewHealthState(null);
+            projectState.updateCurrentProject(code);
+          }}
           onDirtyChange={setHasUnsavedCode}
           onOpenVersionHistory={() => setVersionHistoryOpen(true)}
           repairDisabled={generator.isGenerating || hasUnsavedCode}
           onRepair={repairPreview}
+          onHealthStateChange={setPreviewHealthState}
         />
       </div>
 
@@ -242,7 +253,10 @@ export function BuilderWorkspace() {
         project={projectState.currentProject}
         disabled={generator.isGenerating || hasUnsavedCode}
         onClose={() => setVersionHistoryOpen(false)}
-        onRestore={projectState.restoreProjectVersion}
+        onRestore={(versionId) => {
+          setPreviewHealthState(null);
+          projectState.restoreProjectVersion(versionId);
+        }}
       />
     </main>
   );

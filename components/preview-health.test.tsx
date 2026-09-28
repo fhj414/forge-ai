@@ -86,6 +86,7 @@ describe("PreviewHealth", () => {
     render(
       <PreviewHealth
         state={report({
+          status: "issues",
           interactiveControls: 0,
           forms: 0,
           advertisedActions: 0,
@@ -93,6 +94,9 @@ describe("PreviewHealth", () => {
           advertisedForms: 0,
           wiredForms: 0,
           interactionCoverage: "none",
+          issues: [
+            { message: "Preview does not expose any enabled, visible app action" },
+          ],
         })}
       />,
     );
